@@ -1,0 +1,71 @@
+[package]
+name = "web-server"
+version = "0.1.0"
+edition = "2024"
+
+# web-server is a native-only axum/tokio binary — never built for
+# wasm32. Everything here (tokio's "signal"/"net" reactor, axum, sqlx via
+# lib-db, …) drags mio along, which doesn't support
+# wasm32-unknown-unknown. It's all under a non-wasm32 target gate purely
+# so hakari's workspace-wide, per-platform feature unification (see
+# .config/hakari.toml's `platforms`) doesn't force it into the
+# web-frontend wasm32 build via workspace-hackari — this has no effect on
+# the actual (native) build.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+axum = { workspace = true }
+tower-http = { workspace = true, features = ["trace", "cors"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal", "fs"] }
+futures = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = "1"
+thiserror = "2"
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+# Loads `.env` (from the working directory the binary is run from) into
+# the process's environment before anything reads a `CLOUDFLARE_*`/
+# `DATABASE_URL`/etc. var — see `main.rs`. A missing file is fine (real
+# deploys just set these directly); this only fills in what's absent, so
+# already-exported vars still win.
+dotenvy = "0.15"
+
+lib-db = { version = "0.1", path = "../../libs/lib-db" }
+uuid = { version = "1", features = ["serde"] }
+
+# The transcode + asset-publish DI seam `AppState` holds as `Arc<dyn Trait>`
+# (see state.rs) — this crate is the composition root that picks concrete
+# implementations (main.rs) and drives them (worker.rs).
+lib-ffmpeg = { version = "0.1", path = "../../libs/lib-ffmpeg" }
+lib-cloudflare = { version = "0.1", path = "../../libs/lib-cloudflare" }
+lib-storage = { version = "0.1", path = "../../libs/lib-storage" }
+bytes = "1.11.1"
+
+# Live job progress over SSE (routes/jobs.rs, job_events.rs): `sync` gets us
+# `BroadcastStream`, adapting the per-job `tokio::sync::broadcast` hub into
+# the `Stream` axum's `Sse` wants; `async-stream` builds that handler's
+# stream with plain `yield`s instead of a hand-rolled `Stream` impl.
+tokio-stream = { version = "0.1", features = ["sync"] }
+async-stream = "0.3"
+
+# OpenAPI: utoipa generates the spec from `#[utoipa::path]`-annotated
+# handlers + `ToSchema` DTOs (lib-db's models carry those already);
+# utoipa-axum wires that generation straight into the axum router
+# instead of a hand-maintained spec file; utoipa-swagger-ui serves it.
+utoipa = { version = "5", features = ["uuid", "time"] }
+utoipa-axum = "0.2"
+# "vendored": without it, utoipa-swagger-ui's build script downloads the
+# Swagger UI zip from GitHub at *build* time — fine with plain `cargo
+# build` online, but a hard failure under `nix build`'s sandbox (no
+# network, no `curl` on PATH either). Vendoring embeds the assets in the
+# crate instead, so both build the same way.
+utoipa-swagger-ui = { version = "9", features = ["axum", "vendored"] }
+futures-util = "0.3.34"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+lib-db = { version = "0.1", path = "../../libs/lib-db", features = ["test-util"] }
+tempfile = "3"
+
+[lints]
+workspace = true

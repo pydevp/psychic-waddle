@@ -1,0 +1,26 @@
+[package]
+name = "lib-ffmpeg"
+edition = "2024"
+version.workspace = true
+
+# lib-ffmpeg binds the real, native ffmpeg libraries — never built for
+# wasm32. Gated to keep tokio/reqwest's native backends out of hakari's
+# wasm32 unification (see web-server/Cargo.toml's comment).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ffmpeg-next = "9.0.0"
+rand = "0.10.2"
+reqwest = { version = "0.13.4", features = ["stream"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
+futures-util = "0.3"
+bytes = "1.11.1"
+thiserror = "2"
+# `Transcoder` is held as `Arc<dyn Transcoder>` by web-server (see lib-storage's
+# `AssetStore` for the matching DI seam on the upload side) — async-trait gives
+# it dyn-safety without hand-rolled boxed-future signatures.
+async-trait = { workspace = true }
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+#ez-ffmpeg = { version = "0.18.0", features = ["http-input"] }
+
+
+[lints]
+workspace = true

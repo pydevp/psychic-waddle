@@ -1,0 +1,61 @@
+[package]
+name = "web-frontend"
+edition = "2024"
+version.workspace = true
+
+[dependencies]
+# default-features = false drops dioxus's default "devtools"/"logger"
+# features (dioxus-logger -> tracing-subscriber -> regex -> memchr), which
+# aren't needed for this scaffold and were pulling extra weight into the
+# wasm bundle.
+dioxus = { version = "0.7", default-features = false, features = ["web", "launch", "lib"] }
+# dioxus's own "router" feature currently pins `dioxus-router = "^0.7.10"`,
+# which crates.io doesn't have yet (0.7.9 is latest) — publishing lag on
+# dioxus's end, not a version we control. Depending on dioxus-router
+# directly instead lets cargo pick the newest one that's actually out.
+dioxus-router = "0.7"
+# Lucide icon set as Dioxus components — replaces the hand-rolled SVGs
+# that used to live in `components/icons.rs`.
+dioxus-icons = "0.1"
+
+# wasm-bindgen/js-sys/web-sys/wasm-bindgen-futures below are pinned exact
+# and in lockstep on purpose: the wasm-bindgen ecosystem pins each patch
+# release's crates to each other with exact `=` requirements (it isn't
+# semver-safe across patches), and the `dx` build/serve tool bundles its
+# own fixed wasm-bindgen version that must match the one actually compiled
+# in — currently 0.2.126, per this repo's nixpkgs-provided dioxus-cli. If
+# `dx build`/`dx serve` complains "Incorrect wasm-bindgen-cli version",
+# that's what changed; find the new matching version set (crates.io's
+# dependencies API for js-sys/web-sys/wasm-bindgen-futures shows what each
+# release pins wasm-bindgen to) and update all four together.
+js-sys = "=0.3.103"
+wasm-bindgen = "=0.2.126"
+wasm-bindgen-futures = "=0.4.76"
+# "Location" isn't in dioxus-web's own declared web-sys features but its
+# history.rs uses `Window::location()` — added directly so feature
+# unification turns it on. "Storage"/"Window" are for `view_mode.rs`'s
+# `localStorage` read/write (view-template persistence).
+web-sys = { version = "=0.3.103", features = ["Location", "Storage", "Window"] }
+
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "query"] }
+serde = { version = "1", features = ["derive"] }
+# Decodes the JSON payload of each SSE `JobEvent` tick (video_workspace.rs)
+# — reqwest's "json" feature already pulls this in transitively, but a
+# direct dependency is needed to `use` it ourselves.
+serde_json = "1"
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Not used directly — pulled in transitively as getrandom 0.2.17 via
+# dioxus-router-macro -> digest -> crypto-common -> rand_core, which on
+# wasm32-unknown-unknown refuses to compile unless the "js" feature is on
+# (getrandom 0.2's wasm backend calls into JS crypto; it predates the
+# `getrandom_backend` cfg mechanism 0.3+ uses, so the `--cfg
+# getrandom_backend="wasm_js"` the `dx` toolchain passes doesn't reach it).
+# Depending on it directly here just to flip that feature on — cargo
+# unifies features per resolved version, so this turns "js" on for the
+# same 0.2.17 the transitive deps already resolved to.
+getrandom = { version = "0.2", features = ["js"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,51 @@
+[package]
+name = "lib-cloudflare"
+version = "0.1.0"
+edition = "2024"
+
+# lib-cloudflare talks to the real Cloudflare API (reqwest's native TLS
+# backend) and Postgres (via lib-db/sqlx) — native-only, never built for
+# wasm32. Gated to keep tokio's "net"-driven mio out of hakari's wasm32
+# unification (see web-server/Cargo.toml's comment for the full story).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tracing = { workspace = true }
+serde_with = { workspace = true }
+serde = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+# `sync` only — `WorkerAssetsStore`'s per-worker upload lock (see
+# `assets_store.rs`'s "Same-worker races" doc comment); no runtime of
+# its own is spun up here.
+tokio = { workspace = true, features = ["sync"] }
+
+base64 = "0.22.1"
+reqwest = { version = "0.13", features = ["multipart", "rustls", "json", "stream"], default-features = false }
+bytes = "1.11.1"
+thiserror = "2.0.18"
+metrics = "0.24.3"
+serde_json = "1"
+# Manifest file hashing for the Workers assets-upload-session API (see
+# `assets_store.rs`) — Cloudflare's own algorithm is
+# `sha256(base64(content) + extension)[..32]`, so this needs a real SHA-256,
+# not just the base64 crate already here.
+sha2 = "0.10"
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+# `WorkerAssetsStore` implements lib-storage's `AssetStore` trait, the DI
+# seam `web-server` swaps behind `Arc<dyn AssetStore>` (see that crate's
+# docs for why the trait itself lives there, not here).
+lib-storage = { version = "0.1", path = "../lib-storage" }
+
+# Tracks which of the 99 `assets_NN` Workers each uploaded file landed on
+# (see `assets_store.rs`'s module docs) — state that has to survive a
+# restart, so it lives in the same Postgres db as the rest of the pipeline
+# rather than in memory here.
+lib-db = { version = "0.1", path = "../lib-db" }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+lib-db = { version = "0.1", path = "../lib-db", features = ["test-util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

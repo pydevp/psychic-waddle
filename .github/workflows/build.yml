@@ -1,0 +1,35 @@
+name: build-deps
+
+# This repo contains no application source -- only Cargo/Nix manifests
+# and one-line stub source files (see next_file_browser's
+# scripts/sync-ci-deps.sh). This job builds just the third-party
+# dependency graph (crane's `buildDepsOnly`) and pushes the result to
+# Cachix, so the real project -- built and pushed to the same cache
+# locally, from the machine that actually holds the source -- gets a
+# warm dependency cache without any of its own code ever being pushed
+# to GitHub.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: ${{ vars.CACHIX_CACHE_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build dependency graph
+        run: nix build .#cargo-deps-ffmpeg .#cargo-deps-frontend -L

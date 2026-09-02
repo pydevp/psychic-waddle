@@ -1,0 +1,55 @@
+[package]
+name = "lib-db"
+edition = "2024"
+version.workspace = true
+
+# lib-db is the Postgres client (sqlx's "net"-driven tokio pulls mio
+# along, and uuid/time here only ever run natively) — never built for
+# wasm32. Gated to keep it out of hakari's wasm32 unification (see
+# web-server/Cargo.toml's comment).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+serde = { workspace = true }
+# Renders `time::OffsetDateTime` fields as RFC 3339 strings instead of
+# time's default tuple-of-fields serde repr — matches the `String`
+# OpenAPI schema declared on those fields in models.rs.
+serde_with = { workspace = true }
+tracing = { workspace = true }
+
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde-well-known"] }
+thiserror = "2"
+
+# Db models double as the JSON API's DTOs (see web-server/src/routes) so
+# they carry `ToSchema` straight from here rather than being duplicated
+# behind a mapping layer.
+utoipa = { version = "5", features = ["uuid", "time"] }
+
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+# Postgres (crates/services/web-server connects to the `file_browser` db
+# on reze-pi — see infra's modules/nixos/services/postgresql.nix). Used
+# to be "sqlite" for the self-hosted single-binary target (see the
+# sqlx-vs-SurrealDB writeup); dropped in favor of one dialect to maintain
+# rather than juggling `?` vs `$1` placeholders across every query here.
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "macros",
+    "migrate",
+    "uuid",
+    "time",
+] }
+
+[features]
+# `Db::connect_in_memory()` for tests, exposed to dependents (e.g.
+# web-server's integration tests) as well as this crate's own. Despite
+# the name, it's a fresh schema on a real Postgres server (TEST_DATABASE_URL)
+# now, not literally in-memory — see db.rs's doc comment.
+test-util = []
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

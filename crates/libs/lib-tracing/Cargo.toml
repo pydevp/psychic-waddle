@@ -1,0 +1,21 @@
+[package]
+name = "lib-tracing"
+version = "0.1.0"
+edition = "2024"
+
+# The OTLP/gRPC exporter stack here (tonic -> h2/hyper -> tokio "net")
+# is native-only, never built for wasm32. Gated to keep it out of
+# hakari's wasm32 unification (see web-server/Cargo.toml's comment).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+opentelemetry = "0.31.0"
+opentelemetry-semantic-conventions = { version = "0.31.0", features = ["semconv_experimental"] }
+opentelemetry_sdk = "0.31.0"
+opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic"] }
+opentelemetry-stdout = "0.31.0"
+tracing-opentelemetry = "0.32.1"
+opentelemetry-http = "0.31.0"
+opentelemetry-appender-tracing = "0.31.1"
+
+[lints]
+workspace = true

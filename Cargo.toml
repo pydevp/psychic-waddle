@@ -1,0 +1,56 @@
+[workspace.lints.rust]
+# unsafe_code = "forbid"
+# unused = { level = "allow", priority = -1 } # For exploratory dev.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/workspace-hackari",
+    # -- Application Libraries
+    "crates/libs/lib-cloudflare",
+    "crates/libs/lib-db",
+    "crates/libs/lib-ffmpeg",
+    "crates/libs/lib-storage",
+    "crates/libs/lib-tracing",
+    "crates/libs/lib-util",
+    # -- Application Services
+    "crates/services/web-server",
+    "crates/services/web-frontend",
+]
+
+# NOTE: Only the crates that are utilized in two or more sub-crates and benefit from global management
+#       are handled in workspace.dependencies. Other strategies may also be valid.
+[workspace.dependencies]
+serde_with = { version = "3", features = ["time_0_3"] }
+serde = { version = "1.0.228", features = ["derive"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing = "0.1.44"
+futures = "0.3.32"
+tokio = { version = "1.52.4",features = ["macros"] }
+# Shared by the trait/impl split behind the transcode + asset-publish DI
+# seam: lib-storage (trait + LocalFsStore), lib-ffmpeg (Transcoder impl),
+# lib-cloudflare (WorkerAssetsStore impl) all need the same object-safety
+# story for `Arc<dyn Trait>`.
+async-trait = "0.1"
+
+[workspace.package]
+version = "0.1.0"
+
+[workspace.metadata.crane]
+name = "next_file_browser"
+
+# Applies to both the native web-server build and the wasm32 web-frontend
+# build (flake.nix's `commonArgs`/`frontendArgs` don't set per-crate
+# profiles, so both share this). `codegen-units = 1` + `lto = "thin"`
+# trade build time for a smaller/faster binary; bump to `lto = "fat"` if
+# the extra squeeze is worth slower `nix build`s. `panic = "unwind"`
+# (the default) is left alone deliberately: web-server is a long-running
+# axum/tokio process where a task panic should fail just that request,
+# not `panic = "abort"` the whole server.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
