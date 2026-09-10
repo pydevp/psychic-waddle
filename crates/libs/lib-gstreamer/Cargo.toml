@@ -1,0 +1,45 @@
+[package]
+name = "lib-gstreamer"
+edition = "2024"
+version.workspace = true
+
+# lib-gstreamer binds the real, native GStreamer libraries — never built for
+# wasm32. Gated to keep tokio's native backend out of hakari's wasm32
+# unification (see web-server/Cargo.toml's comment).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+gstreamer = "0.23"
+# appsink: how the poster/contact-sheet branch pulls decoded RGB frames back
+# out of the pipeline (see `pipeline.rs`).
+gstreamer-app = "0.23"
+rand = "0.10.2"
+# Stitching the contact-sheet grid and JPEG-encoding it, plus resizing each
+# tile down from the poster branch's decoded RGB frames (see `poster.rs`).
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+# AES-128-CBC segment encryption (see `encrypt.rs`) — GStreamer has no muxer
+# option equivalent to ffmpeg's `hls_key_info_file`, so this crate does it
+# itself, in pure Rust, straight after each segment file is closed.
+aes = "0.8"
+cbc = { version = "0.1", features = ["std"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
+# `OutputFile::bytes`: every produced file's content is read back into
+# memory right after it's written (see the four `OutputFile { .. }` call
+# sites in pipeline.rs/playlist.rs) so `TranscodeOutput` stays usable by a
+# caller with no access to this process's local filesystem — e.g.
+# `svc-transcode`'s tonic server, which streams those bytes back over
+# gRPC instead of handing back a path only this machine can read.
+bytes = "1"
+thiserror = "2"
+tracing = { workspace = true }
+# `Transcoder` is held as `Arc<dyn Transcoder>` by web-server (see lib-storage's
+# `AssetStore` for the matching DI seam on the upload side) — async-trait gives
+# it dyn-safety without hand-rolled boxed-future signatures.
+async-trait = { workspace = true }
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+[lints]
+workspace = true

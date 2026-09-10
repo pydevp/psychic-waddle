@@ -1,0 +1,32 @@
+[package]
+name = "svc-transcode"
+edition = "2024"
+version.workspace = true
+
+# Native-only tonic server wrapping lib-gstreamer — never built for wasm32.
+# See lib-proto/Cargo.toml's comment for why this is gated the same way
+# lib-gstreamer/web-server already are.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lib-proto = { version = "0.1", path = "../../libs/lib-proto" }
+lib-gstreamer = { version = "0.1", path = "../../libs/lib-gstreamer" }
+tonic = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal", "net"] }
+# `sync` for adapting the progress mpsc channel into TranscodeEvent's
+# server-streamed response (service.rs) the same way web-server's SSE
+# hub does (see job_events.rs).
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# TranscodeGrpcClient (client.rs) implements lib_gstreamer::Transcoder,
+# which is #[async_trait] — see lib-gstreamer/Cargo.toml's comment on why.
+async-trait = { workspace = true }
+bytes = { workspace = true }
+dotenvy = "0.15"
+# Names each request's scratch dir (see service.rs::scratch_dir) the same
+# way web-server/src/worker.rs names its own, just keyed by a random id
+# instead of a job id since this service never sees web-server's job ids.
+uuid = { workspace = true }
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+[lints]
+workspace = true

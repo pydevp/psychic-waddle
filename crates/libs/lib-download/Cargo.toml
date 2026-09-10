@@ -1,0 +1,34 @@
+[package]
+name = "lib-download"
+edition = "2024"
+version.workspace = true
+
+# lib-download talks to the real network (reqwest) — native-only, never
+# built for wasm32. Same gating reasoning as lib-storage/lib-cloudflare;
+# see web-server/Cargo.toml's comment for the full story.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# The DI seam: `DownloadProvider` is the trait `web-server` holds a
+# registry of as `Arc<dyn DownloadProvider>` (see this crate's `lib.rs`
+# docs); `HttpIndexProvider` here is the dependency-light default
+# implementation. A Drive/Dropbox/S3-backed provider later is another
+# impl of the same trait, not a change to this crate's shape.
+async-trait = { workspace = true }
+thiserror = "2"
+# "json" is for `filester`'s download-ticket API round-trip (a JSON POST
+# body, a JSON response) — `http_index` itself only ever needs plain text.
+reqwest = { version = "0.13", features = ["rustls", "json"], default-features = false }
+url = "2"
+# Autoindex pages are simple/regular enough that pulling `<a href>`
+# entries with a couple of anchored regexes is far cheaper than a full
+# HTML parser (html5ever) for it — see `http_index`'s module docs. Also
+# used by `filester` to pull `data-name`/`data-size`/slug out of its
+# listing page's markup for the same reason.
+regex = "1"
+percent-encoding = "2"
+serde = { workspace = true }
+serde_json = "1"
+
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+[lints]
+workspace = true

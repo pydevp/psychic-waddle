@@ -32,4 +32,4 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Build dependency graph
-        run: nix build .#cargo-deps-ffmpeg .#cargo-deps-frontend -L
+        run: nix build .#cargo-deps-gstreamer .#cargo-deps-svc-light .#cargo-deps-frontend -L

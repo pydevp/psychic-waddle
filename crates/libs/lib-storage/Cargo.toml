@@ -15,7 +15,7 @@ version.workspace = true
 async-trait = { workspace = true }
 bytes = "1.11.1"
 thiserror = "2"
-tokio = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["fs", "sync"] }
 tracing = { workspace = true }
 
 workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }

@@ -1,0 +1,21 @@
+[package]
+name = "lib-proto"
+edition = "2024"
+version.workspace = true
+
+# Server-only (like lib-gstreamer/lib-cloudflare/lib-download): nothing here
+# is meant to run in web-frontend's wasm32 build, so this is gated the
+# same way those are (see web-server/Cargo.toml's comment on why) purely
+# to keep hakari's workspace-wide feature unification from dragging
+# tonic's native transport into that build.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
+prost = { workspace = true }
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+tonic-prost-build = { workspace = true }
+
+[lints]
+workspace = true

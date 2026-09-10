@@ -1,0 +1,27 @@
+[package]
+name = "svc-download"
+edition = "2024"
+version.workspace = true
+
+# Native-only tonic server wrapping lib-download — never built for
+# wasm32. See lib-proto/Cargo.toml's comment.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lib-proto = { version = "0.1", path = "../../libs/lib-proto" }
+lib-download = { version = "0.1", path = "../../libs/lib-download" }
+tonic = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }
+dotenvy = "0.15"
+workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+# tests/grpc_roundtrip.rs: TcpListenerStream lets that test bind an
+# OS-assigned port itself and hand the resulting stream to
+# `Server::serve_with_incoming`, rather than needing the port fixed up
+# front the way `Server::serve(addr)` would.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio-stream = { version = "0.1", features = ["net"] }
+
+[lints]
+workspace = true
