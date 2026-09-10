@@ -8,6 +8,29 @@ name: build-deps
 # locally, from the machine that actually holds the source -- gets a
 # warm dependency cache without any of its own code ever being pushed
 # to GitHub.
+#
+# Runs on standard x86_64 runners and cross-compiles to aarch64 (the
+# `*-aarch64` outputs flake.nix only defines when `system ==
+# "x86_64-linux"`, see its `crossEnabled`) rather than using GitHub's
+# native `ubuntu-24.04-arm` runners. That's deliberate, not just
+# `-arm` being a smaller/pricier runner pool: a *native* aarch64-linux
+# build produces different store paths than an aarch64 *cross* build
+# does, so a native-arm runner's cache never hit for a local machine
+# that's itself building via `pkgsCross.aarch64-multiplatform` from
+# x86_64-linux. Building the same `*-aarch64` cross outputs here, from
+# the same x86_64-linux system, makes CI and a local cross build
+# resolve to identical store paths -- so the local build actually
+# lands a Cachix hit instead of redoing the (slow, GStreamer-for-
+# aarch64) compile from scratch.
+#
+# One job per dependency-graph target (matching flake.nix's three
+# `*CargoArtifacts` groups, one per set of microservices) rather than
+# one job building all three attrs together, so they run in parallel
+# across separate runners instead of sharing one runner's cores
+# sequentially -- each group already has its own independent
+# `cargoArtifacts` in flake.nix (that's the whole point of the
+# gstreamer/svc-light split there), so there's nothing shared to lose
+# by not building them in the same job.
 
 on:
   push:
@@ -20,7 +43,23 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # web-server + svc-transcode (GStreamer-linking services)
+          - name: gstreamer
+            attr: cargo-deps-gstreamer-aarch64
+          # svc-assets + svc-download (no GStreamer)
+          - name: svc-light
+            attr: cargo-deps-svc-light-aarch64
+          # web-frontend (wasm32 -- arch-independent, no -aarch64 variant;
+          # building it on the same x86_64 host as the others is what
+          # makes it match a local x86_64-linux build too)
+          - name: frontend
+            attr: cargo-deps-frontend
+    runs-on: ubuntu-24.04
+    name: build (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
 
@@ -32,4 +71,4 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Build dependency graph
-        run: nix build .#cargo-deps-gstreamer .#cargo-deps-svc-light .#cargo-deps-frontend -L
+        run: nix build .#${{ matrix.attr }} -L
