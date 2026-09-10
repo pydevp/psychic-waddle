@@ -346,6 +346,165 @@
           }
         );
 
+        # ---------------------------------------------------------------
+        # arm64 cross-compilation, for the three svc-* gRPC services only
+        # (not web-server/web-frontend -- web-frontend is wasm32, already
+        # arch-independent, and web-server would need this exact same
+        # GStreamer-cross story as svc-transcode below, just not done yet).
+        # Only defined from an x86_64-linux host: on a native aarch64-linux
+        # builder this would be a pointless cross-of-same-arch, and
+        # dockerTools/cross toolchains aren't a Darwin thing at all.
+        #
+        # This deliberately mirrors the svcLight/gstreamer split above --
+        # the whole point of that split was so touching svc-assets doesn't
+        # rebuild svc-transcode's (GStreamer) deps; cross-compiling adds a
+        # *second* axis (target arch) to cache along, not a reason to
+        # collapse the first one. `armSvcLightCargoArtifacts` never touches
+        # GStreamer at all, cross or not.
+        # ---------------------------------------------------------------
+        crossEnabled = system == "x86_64-linux";
+
+        armPkgsCross = pkgs.pkgsCross.aarch64-multiplatform;
+        armTargetTriple = "aarch64-unknown-linux-gnu";
+        armTargetEnv = lib.toUpper (builtins.replaceStrings ["-"] ["_"] armTargetTriple);
+
+        armRustToolchain = fenix.packages.${system}.combine [
+          fenix.packages.${system}.stable.toolchain
+          fenix.packages.${system}.stable.rust-src
+          fenix.packages.${system}.targets.${armTargetTriple}.stable.rust-std
+        ];
+
+        armCraneLib = (crane.mkLib pkgs).overrideToolchain armRustToolchain;
+
+        # The cross gcc that *runs* on the build host (x86_64) but
+        # produces aarch64 code -- `armPkgsCross.stdenv.cc` itself (no
+        # `.buildPackages`) is already the right one here, since
+        # `pkgsCross.<target>.stdenv.cc` *is* a build-host-hosted
+        # cross-compiler by construction (that's what makes it a "cross"
+        # stdenv rather than a QEMU-emulated native one).
+        armCC = "${armPkgsCross.stdenv.cc}/bin/${armPkgsCross.stdenv.cc.targetPrefix}cc";
+
+        armCommonArgs =
+          commonArgs
+          // {
+            CARGO_BUILD_TARGET = armTargetTriple;
+            "CARGO_TARGET_${armTargetEnv}_LINKER" = armCC;
+            TARGET_CC = armCC;
+            HOST_CC = "${pkgs.stdenv.cc}/bin/cc";
+            # Without this, `system-deps`/pkg-config-linked `-sys` crates
+            # (gstreamer-sys et al, below) refuse to run pkg-config at all
+            # once `CARGO_BUILD_TARGET` != the build host's own target,
+            # erroring "pkg-config has not been configured to support
+            # cross-compilation" instead of resolving anything.
+            PKG_CONFIG_ALLOW_CROSS = "1";
+
+            nativeBuildInputs =
+              (commonArgs.nativeBuildInputs or [])
+              ++ [
+                # The pkg-config *binary* still has to run on the build
+                # host (x86_64) -- but wrapped (via nixpkgs' splicing) to
+                # search the aarch64 sysroot's .pc files instead of the
+                # host's own. Plain `pkgs.pkg-config` (already in
+                # `commonArgs`, kept for `protobuf`'s sake) would resolve
+                # x86_64 .pc files and either link the wrong ELF class or
+                # fail outright.
+                armPkgsCross.buildPackages.pkg-config
+              ];
+          };
+
+        # Same package list as the native `gstPackages`, just resolved
+        # against `armPkgsCross` so each one is the aarch64 build (nixpkgs'
+        # splicing still hands back an x86_64-hosted `pkg-config`/`bindgen`
+        # etc. for anything in `nativeBuildInputs`, same story as above).
+        armGstPackages = with armPkgsCross.gst_all_1; [
+          gstreamer
+          gst-plugins-base
+          gst-plugins-good
+          gst-plugins-bad
+          gst-plugins-rs
+          armPkgsCross.glib
+        ];
+
+        armGstreamerArgs =
+          armCommonArgs
+          // {
+            buildInputs = (armCommonArgs.buildInputs or []) ++ armGstPackages;
+            nativeBuildInputs =
+              (armCommonArgs.nativeBuildInputs or [])
+              ++ [
+                pkgs.llvmPackages.libclang.lib
+              ];
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+            BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.glibc.dev}/include";
+          };
+
+        # Matches `svcLightArgs` above: `-p svc-assets -p svc-download`
+        # built (and dep-cached) together, GStreamer nowhere in reach.
+        armSvcLightArgs =
+          armCommonArgs
+          // {
+            cargoExtraArgs = "-p svc-assets -p svc-download";
+          };
+
+        armGstreamerCargoArtifacts = armCraneLib.buildDepsOnly armGstreamerArgs;
+        armSvcLightCargoArtifacts = armCraneLib.buildDepsOnly armSvcLightArgs;
+
+        armGstreamerIndividualCrateArgs =
+          armGstreamerArgs
+          // {
+            cargoArtifacts = armGstreamerCargoArtifacts;
+            inherit (armCraneLib.crateNameFromCargoToml {inherit src;}) version;
+          };
+
+        armSvcLightIndividualCrateArgs =
+          armCommonArgs
+          // {
+            cargoArtifacts = armSvcLightCargoArtifacts;
+            inherit (armCraneLib.crateNameFromCargoToml {inherit src;}) version;
+          };
+
+        # Same RPATH/plugin-registry story as the native `svc-transcode`
+        # above (see its comment) -- `autoPatchelfHook`/`makeWrapper` taken
+        # from `armPkgsCross` so the patching and the wrapper script itself
+        # both target aarch64 (nixpkgs' splicing resolves these hooks back
+        # to build-host-runnable tools regardless; only the *output* --
+        # the patched RPATHs and the wrapper's own shebang interpreter --
+        # ends up aarch64).
+        svc-transcode-aarch64 = armCraneLib.buildPackage (
+          armGstreamerIndividualCrateArgs
+          // {
+            pname = "svc-transcode";
+            cargoExtraArgs = "-p svc-transcode";
+            src = fileSetForCrate ./crates/services/svc-transcode;
+
+            buildInputs = armGstreamerIndividualCrateArgs.buildInputs ++ map (p: p.out) armGstPackages;
+            nativeBuildInputs = armGstreamerIndividualCrateArgs.nativeBuildInputs ++ [armPkgsCross.autoPatchelfHook armPkgsCross.makeWrapper];
+
+            postFixup = ''
+              wrapProgram $out/bin/svc-transcode \
+                --set GST_PLUGIN_SYSTEM_PATH_1_0 "${lib.concatMapStringsSep ":" (p: "${p.out}/lib/gstreamer-1.0") armGstPackages}"
+            '';
+          }
+        );
+
+        svc-assets-aarch64 = armCraneLib.buildPackage (
+          armSvcLightIndividualCrateArgs
+          // {
+            pname = "svc-assets";
+            cargoExtraArgs = "-p svc-assets";
+            src = fileSetForCrate ./crates/services/svc-assets;
+          }
+        );
+
+        svc-download-aarch64 = armCraneLib.buildPackage (
+          armSvcLightIndividualCrateArgs
+          // {
+            pname = "svc-download";
+            cargoExtraArgs = "-p svc-download";
+            src = fileSetForCrate ./crates/services/svc-download;
+          }
+        );
+
         # `craneLib.buildPackage` assumes `cargo build` + `cargo install`
         # semantics (copy the resulting binary out) -- fine for
         # `web-server`, wrong for a Dioxus web app: `cargo build`ing
@@ -457,6 +616,52 @@
             ExposedPorts = {"50053/tcp" = {};};
           };
         };
+
+        # arm64 counterparts of the three images above, built from the
+        # `*-aarch64` derivations. `armPkgsCross.dockerTools` (not
+        # `pkgs.dockerTools`) so the image's own Architecture metadata comes
+        # out "arm64" -- layer assembly itself (tar/gzip) still just runs on
+        # the build host, no emulation needed either way. Tagged
+        # "linux-arm64" rather than reusing "latest" so both architectures'
+        # images can be pushed to the same repository and combined into one
+        # multi-arch manifest afterwards (e.g. `docker manifest create` /
+        # `docker buildx imagetools create`) without one overwriting the
+        # other.
+        svc-transcode-image-aarch64 = armPkgsCross.dockerTools.buildLayeredImage {
+          name = "svc-transcode";
+          tag = "linux-arm64";
+          created = "now";
+          contents = [armPkgsCross.cacert svc-transcode-aarch64];
+          config = {
+            Cmd = ["${svc-transcode-aarch64}/bin/svc-transcode"];
+            Env = ["SSL_CERT_FILE=${armPkgsCross.cacert}/etc/ssl/certs/ca-bundle.crt"];
+            ExposedPorts = {"50051/tcp" = {};};
+          };
+        };
+
+        svc-assets-image-aarch64 = armPkgsCross.dockerTools.buildLayeredImage {
+          name = "svc-assets";
+          tag = "linux-arm64";
+          created = "now";
+          contents = [armPkgsCross.cacert svc-assets-aarch64];
+          config = {
+            Cmd = ["${svc-assets-aarch64}/bin/svc-assets"];
+            Env = ["SSL_CERT_FILE=${armPkgsCross.cacert}/etc/ssl/certs/ca-bundle.crt"];
+            ExposedPorts = {"50052/tcp" = {};};
+          };
+        };
+
+        svc-download-image-aarch64 = armPkgsCross.dockerTools.buildLayeredImage {
+          name = "svc-download";
+          tag = "linux-arm64";
+          created = "now";
+          contents = [armPkgsCross.cacert svc-download-aarch64];
+          config = {
+            Cmd = ["${svc-download-aarch64}/bin/svc-download"];
+            Env = ["SSL_CERT_FILE=${armPkgsCross.cacert}/etc/ssl/certs/ca-bundle.crt"];
+            ExposedPorts = {"50053/tcp" = {};};
+          };
+        };
       in {
         packages =
           {
@@ -490,6 +695,22 @@
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             inherit web-server-image svc-transcode-image svc-assets-image svc-download-image;
+          }
+          // lib.optionalAttrs crossEnabled {
+            inherit svc-transcode-aarch64 svc-assets-aarch64 svc-download-aarch64;
+            inherit svc-transcode-image-aarch64 svc-assets-image-aarch64 svc-download-image-aarch64;
+
+            # Same warm-the-Cachix-cache story as `cargo-deps-svc-light`/
+            # `cargo-deps-gstreamer` above, just for the arm64 target --
+            # without pushing these too, every cross build (CI or anyone
+            # else's machine) redoes the from-scratch GStreamer-for-aarch64
+            # compile `armGstreamerCargoArtifacts` triggers the first time
+            # (nixpkgs' cross Hydra jobsets don't cover the full GStreamer
+            # + gst-plugins-rs stack, so this one in particular is *not*
+            # already sitting on cache.nixos.org the way native aarch64-
+            # linux packages usually are).
+            cargo-deps-svc-light-aarch64 = armSvcLightCargoArtifacts;
+            cargo-deps-gstreamer-aarch64 = armGstreamerCargoArtifacts;
           };
 
         apps = {
