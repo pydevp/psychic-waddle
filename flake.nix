@@ -78,16 +78,192 @@
         # ffmpeg-next directly, hence `gstreamerArgs`/`gstreamerCargoArtifacts`
         # etc. below having once been `ffmpeg*`-named (see git history if
         # that naming still turns up anywhere unexpected).
-        # `-base`/`-good` cover the elements the mux pipeline needs
-        # (`parsebin`, `mpegtsmux`, `splitmuxsink`, `souphttpsrc`, `aacparse`,
-        # `qtdemux`/`matroskademux`); `-bad` is required separately for
-        # `h264parse`/`h265parse`, which nixpkgs ships there, not in `-good`.
+        #
+        # `pipeline.rs` only ever constructs a small, fixed set of elements
+        # (see its module doc's ASCII pipeline diagram and `make(...)`
+        # call sites): `parsebin`/`decodebin`/`videoconvert`/`appsink`/
+        # `appsrc`/typefind from `-base`; `qtdemux`/`matroskademux`/
+        # `aacparse`/`splitmuxsink` from `-good`; `mpegtsmux`/`h264parse`/
+        # `h265parse` from `-bad`, plus `openh264`/`libde265` there for
+        # `decodebin`'s actual H.264/H.265 software decode (needed by the
+        # poster/contact-sheet branch -- see `build_poster_branch` --
+        # which `generate_poster`/`run_poster_only` reach unconditionally,
+        # `GENERATE_POSTERS` only gating the *other* call site in `run`).
+        # nixpkgs' own `gst-plugins-{base,good,bad}` build *every* plugin
+        # each one ships (their own `meson.options`/`meson.build` list the
+        # menu -- alsa/cdparanoia/pango/opus/vorbis/theora/GL/X11/Wayland
+        # for `-base`; gtk3/qt5/qt6/jack/pulseaudio/v4l2/cairo/soup/taglib/
+        # a dozen audio codecs for `-good`; the bulk of `-bad`'s ~150
+        # options -- nvcodec/vulkan/d3d11/decklink/aja/webrtc/bluez/lv2/
+        # ladspa/opencv/...), because nixpkgs' generic meson setup hook
+        # passes `-Dauto_features=enabled` by default, which promotes
+        # every 'auto'-valued feature option to a hard "enabled, fail the
+        # build if the dep is missing" -- so nixpkgs' own `default.nix`
+        # for each has to list every optional library as a real
+        # (unconditional, for anything with no dedicated `*Support ?`
+        # toggle) `buildInputs` entry just to keep that promise. None of
+        # that is reachable from this crate's fixed element set, and it's
+        # real weight: minutes of extra from-source build time natively,
+        # and (the sharper edge, since this project cross-compiles to
+        # aarch64 below) a much larger set of C libraries that has to
+        # cross-build cleanly at all.
+        #
+        # `mkMinimalGst` flips that back: `-Dauto_features=disabled`
+        # makes every *other* feature quietly skip (not fail) when its
+        # dep is absent, then re-enables (`-D<plugin>=enabled`, which
+        # keeps the "fail if the dep is missing" guarantee for just this
+        # short list) only the plugins above -- all four of `-base`'s and
+        # `-good`'s are in their own `meson.options`' "no external deps"
+        # sections, so once `auto_features` no longer drags in
+        # cairo/gtk3/pango/etc. to satisfy *other* plugins, those two
+        # shrink to `orc` alone. `-bad`'s `openh264`/`libde265` do need
+        # their libraries, so those stay; `enableGplPlugins = false`/
+        # `bluezSupport = false`/`ldacbtSupport = false`/
+        # `webrtcAudioProcessingSupport = false` shed the constructor-
+        # level toggles nixpkgs already exposes for its other biggest
+        # unconditional-buildInputs offenders (faad2/libmpeg2/mjpegtools/
+        # x265, bluez, ldacbt, webrtc-audio-processing) before the
+        # `buildInputs` replacement below drops the rest (json-glib/lcms2/
+        # libass/openjpeg/curl/gsm/libaom/libdvdnav/openal/openexr/pango/
+        # fluidsynth/gnutls/svt-av1/... -- see `-bad`'s own `default.nix`
+        # for the full unconditional list this replaces). Threading `base`
+        # in as each later stage's own `gst-plugins-base` override arg
+        # (rather than just as a `buildInputs` entry) matters for `-bad`
+        # specifically: its `mesonFlags`/`nativeBuildInputs` read
+        # `gst-plugins-base.{waylandEnabled,glEnabled}` to decide whether
+        # to probe for Wayland/libva/GL at all, and those passthru fields
+        # need to come from *our* trimmed `-base` (X11/Wayland/GL all off)
+        # to actually be false, not from nixpkgs' stock one.
+        mkMinimalGst = p: let
+          base = (p.gst_all_1.gst-plugins-base.override {
+            enableX11 = false;
+            enableWayland = false;
+            enableAlsa = false;
+            enableCdparanoia = false;
+            withIntrospection = false;
+            enableDocumentation = false;
+          })
+          .overrideAttrs (old: {
+            mesonFlags =
+              old.mesonFlags
+              ++ [
+                "-Dauto_features=disabled"
+                # `auto_features=disabled` only pulls an *'auto'*-valued
+                # feature back to disabled -- `-base`'s own `mesonFlags`
+                # (above, in `old`) force `vorbis` to a hardcoded
+                # `enabled` unconditionally (no override arg gates it),
+                # so it has to be overridden explicitly here too or
+                # meson still requires `libvorbis` (dropped from
+                # `buildInputs` below) and fails the configure step.
+                "-Dvorbis=disabled"
+                "-Dplayback=enabled" # parsebin, decodebin
+                "-Dapp=enabled" # appsink, appsrc
+                "-Dvideoconvertscale=enabled" # videoconvert
+                "-Dtypefind=enabled" # backs parsebin/decodebin/qtdemux's type sniffing
+                "-Dorc=enabled"
+              ];
+            buildInputs = [p.orc];
+          });
+
+          good = (p.gst_all_1.gst-plugins-good.override {
+            gst-plugins-base = base;
+            gtkSupport = false;
+            qt5Support = false;
+            qt6Support = false;
+            raspiCameraSupport = false;
+            enableJack = false;
+            enableX11 = false;
+            enableWayland = false;
+            enableDocumentation = false;
+          })
+          .overrideAttrs (old: {
+            mesonFlags =
+              old.mesonFlags
+              ++ [
+                "-Dauto_features=disabled"
+                # `-good`'s own `mesonFlags` hardcode `dv1394`/`oss`/
+                # `oss4`/`pulse`/`v4l2`/`v4l2-gudev` to
+                # `stdenv.hostPlatform.isLinux` -- true unconditionally
+                # here, no override arg gates it -- rather than leaving
+                # them at their `meson.options` 'auto' default, so
+                # `auto_features=disabled` never touches them; each needs
+                # overriding back to `disabled` explicitly instead (found
+                # by trying: v4l2 built fine off the host's own kernel
+                # headers with no pkg-config dep at all, then failed
+                # configure for real over `v4l2-gudev`'s `gudev-1.0`
+                # pkg-config dependency, which isn't in `buildInputs`
+                # below; `dv1394` failed the same way over `libraw1394`).
+                "-Ddv1394=disabled"
+                "-Doss=disabled"
+                "-Doss4=disabled"
+                "-Dpulse=disabled"
+                "-Dv4l2=disabled"
+                "-Dv4l2-gudev=disabled"
+                "-Disomp4=enabled" # qtdemux
+                "-Dmatroska=enabled" # matroskademux
+                "-Daudioparsers=enabled" # aacparse
+                "-Dmultifile=enabled" # splitmuxsink
+                "-Dorc=enabled"
+              ];
+            buildInputs = [base p.orc];
+          });
+
+          bad = (p.gst_all_1.gst-plugins-bad.override {
+            gst-plugins-base = base;
+            enableGplPlugins = false;
+            bluezSupport = false;
+            ldacbtSupport = false;
+            webrtcAudioProcessingSupport = false;
+            # `ajaSupport` defaults to `lib.meta.availableOn ... libajantv2`,
+            # which resolves true on this platform even though the AJA
+            # NTV2 SDK itself isn't really fetchable in nixpkgs -- left at
+            # its default, `-Daja=enabled` fails configure hunting for a
+            # `libajantv2.pc` that doesn't exist. Same story as
+            # `openh264Support` below, just the opposite direction.
+            ajaSupport = false;
+            openh264Support = true;
+            enableDocumentation = false;
+          })
+          .overrideAttrs (old: {
+            mesonFlags =
+              old.mesonFlags
+              ++ [
+                "-Dauto_features=disabled"
+                # Same story as `-base`'s `vorbis` above: `-bad`'s own
+                # `mesonFlags` force `openaptx` to a hardcoded `enabled`
+                # unconditionally, needing `libfreeaptx` (dropped from
+                # `buildInputs` below).
+                "-Dopenaptx=disabled"
+                "-Dmpegtsmux=enabled"
+                "-Dvideoparsers=enabled" # h264parse, h265parse
+                "-Dopenh264=enabled" # openh264dec, decodebin's H.264 software decoder
+                "-Dlibde265=enabled" # libde265dec, decodebin's H.265 software decoder
+                "-Dorc=enabled"
+              ];
+            buildInputs = [base p.orc p.openh264 p.libde265];
+          });
+        in {inherit base good bad;};
+
+        gstMinimal = mkMinimalGst pkgs;
+
         gstPackages = with pkgs.gst_all_1; [
           gstreamer
-          gst-plugins-base
-          gst-plugins-good
-          gst-plugins-bad
-          gst-plugins-rs
+          gstMinimal.base
+          gstMinimal.good
+          gstMinimal.bad
+          # nixpkgs' `gst-plugins-rs` builds *every* Rust plugin by default
+          # (webrtc, gtk4, whisper, csound, aws, ndi, ...), pulling in gtk4/
+          # cairo/whisper.cpp/aws-lc-rs/csound as real build (and runtime
+          # closure) deps -- pipeline.rs only ever asks for one element out
+          # of that whole set, `reqwesthttpsrc` (the URL-source branch of
+          # `video_source_element`), which is the `reqwest` plugin. Scoping
+          # `plugins` down to just that trades the full build's
+          # cache.nixos.org substitute for a from-source build, but it's a
+          # much smaller one -- no gtk4/whisper/csound/aws in the closure at
+          # all, and (since `plugins != [ "whisper" ]`) nixpkgs' own
+          # `requiresBindgen` stays false too, so this doesn't drag cmake/
+          # bindgen back in behind our backs either.
+          (gst-plugins-rs.override {plugins = ["reqwest"];})
           # Not a GStreamer package itself, but gstreamer-rs's core types
           # (Object, Element, ...) are GObjects -- glib/gobject/gio's libs
           # are always a runtime dependency, just not one `nix build`'s
@@ -104,20 +280,6 @@
           commonArgs
           // {
             buildInputs = (commonArgs.buildInputs or []) ++ gstPackages;
-
-            # gstreamer-rs's `-sys` crates resolve against pkg-config, not
-            # bindgen, so this pair is very likely dead weight now that
-            # ffmpeg-sys-next (the thing that actually needed it) is gone --
-            # left in rather than removed blind, since it's harmless to keep
-            # and only costs anything if it's wrong.
-            nativeBuildInputs =
-              (commonArgs.nativeBuildInputs or [])
-              ++ [
-                pkgs.llvmPackages.libclang.lib
-              ];
-
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-            BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.glibc.dev}/include";
           };
 
         frontendArgs =
@@ -315,9 +477,9 @@
         # +`lib-db`, `svc-download` wraps `lib-download` -- reqwest/sqlx over
         # rustls, no native libs beyond glibc) -- built from
         # `svcLightIndividualCrateArgs` rather than `gstreamerIndividualCrateArgs`,
-        # so neither one pulls in `gstPackages`, `llvmPackages.libclang`, or
-        # `BINDGEN_EXTRA_CLANG_ARGS` at all. This is the actual point of
-        # giving each service its own package instead of one `commonArgs`-wide
+        # so neither one pulls in `gstPackages` at all. This is the actual
+        # point of giving each service its own package instead of one
+        # `commonArgs`-wide
         # build: touching `svc-assets` no longer needs to build (or even have
         # installed) the GStreamer stack `svc-transcode`/`web-server` require,
         # and its own `cargoArtifacts` (`svcLightCargoArtifacts`, not
@@ -412,16 +574,24 @@
               ];
           };
 
-        # Same package list as the native `gstPackages`, just resolved
-        # against `armPkgsCross` so each one is the aarch64 build (nixpkgs'
-        # splicing still hands back an x86_64-hosted `pkg-config`/`bindgen`
-        # etc. for anything in `nativeBuildInputs`, same story as above).
+        # Same package list as the native `gstPackages` (including the same
+        # `reqwest`-only `gst-plugins-rs.override`, and the same
+        # `mkMinimalGst` trim -- see its comment: shedding gtk3/qt5/qt6/
+        # pango/GL/X11/Wayland/bluez/webrtc/... here is the whole point,
+        # since those are exactly the C libraries most likely to *not*
+        # cross-compile to aarch64 cleanly, or at all), just resolved
+        # against `armPkgsCross` so each one is the aarch64 build
+        # (nixpkgs' splicing still hands back an x86_64-hosted
+        # `pkg-config`/etc. for anything in `nativeBuildInputs`, same
+        # story as above).
+        armGstMinimal = mkMinimalGst armPkgsCross;
+
         armGstPackages = with armPkgsCross.gst_all_1; [
           gstreamer
-          gst-plugins-base
-          gst-plugins-good
-          gst-plugins-bad
-          gst-plugins-rs
+          armGstMinimal.base
+          armGstMinimal.good
+          armGstMinimal.bad
+          (gst-plugins-rs.override {plugins = ["reqwest"];})
           armPkgsCross.glib
         ];
 
@@ -429,13 +599,6 @@
           armCommonArgs
           // {
             buildInputs = (armCommonArgs.buildInputs or []) ++ armGstPackages;
-            nativeBuildInputs =
-              (armCommonArgs.nativeBuildInputs or [])
-              ++ [
-                pkgs.llvmPackages.libclang.lib
-              ];
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-            BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.glibc.dev}/include";
           };
 
         # Matches `svcLightArgs` above: `-p svc-assets -p svc-download`
@@ -681,8 +844,8 @@
             # Three separate caches now, matching the three
             # `*CargoArtifacts` used above: `cargo-deps-svc-light`
             # (`svcLightCargoArtifacts`, scoped to `-p svc-assets -p
-            # svc-download`) backs those two -- no `gstPackages`/libclang
-            # at all, so it's both cheaper to build and unaffected by
+            # svc-download`) backs those two -- no `gstPackages` at all, so
+            # it's both cheaper to build and unaffected by
             # lib-gstreamer's deps changing. `cargo-deps-gstreamer` still covers
             # the whole native, GStreamer-linking side (`web-server` +
             # `svc-transcode`, plus everything `cargo-deps-svc-light`
@@ -733,9 +896,6 @@
 
         devShells.default = craneLib.devShell {
           inputsFrom = [web-server web-frontend];
-
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-          BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.glibc.dev}/include";
 
           # `gstPackages` are a build input (via `gstreamerArgs`/`inputsFrom`
           # above) so `cargo build`/`check` links against them fine, but that
