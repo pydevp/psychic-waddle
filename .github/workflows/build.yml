@@ -47,9 +47,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # web-server + svc-transcode (GStreamer-linking services)
+          # web-server + svc-transcode (GStreamer-linking services). Native
+          # x86_64 build: flake.nix has no aarch64 GStreamer variant (a
+          # static musl binary can't dlopen plugins).
           - name: gstreamer
-            attr: cargo-deps-gstreamer-aarch64
+            attr: cargo-deps-gstreamer
           # svc-assets + svc-download (no GStreamer)
           - name: svc-light
             attr: cargo-deps-svc-light-aarch64
