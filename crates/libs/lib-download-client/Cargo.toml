@@ -1,0 +1,24 @@
+[package]
+name = "lib-download-client"
+edition = "2024"
+version.workspace = true
+
+# Thin gRPC client + generated proto types only — no
+# `lib_download::DownloadProviderRegistry` construction, no server code.
+# Never built for wasm32, same reasoning as `svc-download`'s own gate.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tonic = { workspace = true }
+tracing = { workspace = true }
+lib-tracing = { version = "0.1", path = "../lib-tracing", features = ["tonic"] }
+tonic-prost = { workspace = true }
+prost = { workspace = true }
+# `DownloadGrpcClient::{list_providers,list_folder}` return
+# `lib_download::{ProviderInfo,RemoteEntry}` directly (see client.rs) —
+# just the plain data types, not `DownloadProvider`/the registry.
+lib-download = { version = "0.1", path = "../lib-download" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+tonic-prost-build = { workspace = true }
+
+[lints]
+workspace = true

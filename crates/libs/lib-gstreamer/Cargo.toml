@@ -3,18 +3,18 @@ name = "lib-gstreamer"
 edition = "2024"
 version.workspace = true
 
-# lib-gstreamer binds the real, native GStreamer libraries — never built for
-# wasm32. Gated to keep tokio's native backend out of hakari's wasm32
-# unification (see web-server/Cargo.toml's comment).
+# lib-gstreamer binds the real, native GStreamer libraries — never built
+# for wasm32, hence the target gate. It is one of the two backends behind
+# `lib-transcode`'s `Transcoder` trait (the other is `lib-ffmpeg`); only
+# the binary that runs a backend (`svc-transcode`, via its Cargo features)
+# depends on this crate, so no consumer of the trait ever links GStreamer.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lib-transcode = { version = "0.1", path = "../lib-transcode", features = ["poster"] }
 gstreamer = "0.23"
 # appsink: how the poster/contact-sheet branch pulls decoded RGB frames back
 # out of the pipeline (see `pipeline.rs`).
 gstreamer-app = "0.23"
 rand = "0.10.2"
-# Stitching the contact-sheet grid and JPEG-encoding it, plus resizing each
-# tile down from the poster branch's decoded RGB frames (see `poster.rs`).
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
 # AES-128-CBC segment encryption (see `encrypt.rs`) — GStreamer has no muxer
 # option equivalent to ffmpeg's `hls_key_info_file`, so this crate does it
 # itself, in pure Rust, straight after each segment file is closed.
@@ -34,10 +34,9 @@ tracing = { workspace = true }
 # `AssetStore` for the matching DI seam on the upload side) — async-trait gives
 # it dyn-safety without hand-rolled boxed-future signatures.
 async-trait = { workspace = true }
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
-
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+lib-transcode = { version = "0.1", path = "../lib-transcode", features = ["conformance"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 

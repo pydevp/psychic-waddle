@@ -1,4 +1,19 @@
 {
+  # `pydevrpi` is a pull-only Cachix binary cache (see
+  # https://app.cachix.org/cache/pydevrpi#pull) -- substitutes prebuilt
+  # store paths (this project's own `cargo-deps-*`/aarch64-cross pushes,
+  # or anything else already built under this cache's name) instead of
+  # building them locally. `extra-*` so this adds to, rather than
+  # replaces, Nix's own default `cache.nixos.org` substituter/key.
+  # `nixConfig` is advisory: a first `nix build`/`flake check` against
+  # this flake prompts to accept it (or needs
+  # `--accept-flake-config`/`nix.settings.accept-flake-config` in
+  # non-interactive contexts) before it actually takes effect.
+  nixConfig = {
+    extra-substituters = [ "https://pydevrpi.cachix.org" ];
+    extra-trusted-public-keys = [ "pydevrpi.cachix.org-1:aAmJWUc+MjL0i2RcZO+mwW3EM5fV5XRLWGYjtcuKjj0=" ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     fenix = {
@@ -9,16 +24,17 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    fenix,
-    crane,
-    flake-utils,
-    ...
-  }:
+  outputs =
+    { self
+    , nixpkgs
+    , fenix
+    , crane
+    , flake-utils
+    , ...
+    }:
     flake-utils.lib.eachDefaultSystem (
-      system: let
+      system:
+      let
         pkgs = nixpkgs.legacyPackages.${system};
         inherit (pkgs) lib;
 
@@ -58,17 +74,18 @@
           # network at all.
           doCheck = false;
 
-          buildInputs = [];
+          buildInputs = [ ];
 
           nativeBuildInputs = [
             pkgs.pkg-config
-            # lib-proto's build.rs (crates/libs/lib-proto/build.rs) shells
-            # out to `protoc` to compile proto/*.proto for every svc-*
-            # crate (and, transitively, web-server — see its Cargo.toml's
-            # comment on why it depends on the svc-* crates directly) —
-            # in commonArgs rather than just gstreamerArgs/web-server's own
-            # args so `cargoArtifacts`/`buildDepsOnly` (which builds every
-            # workspace member's deps, lib-proto included) has it too.
+            # Each svc-*'s own build.rs shells out to `protoc` to compile
+            # its proto/*.proto (and, transitively, web-server needs it too
+            # — see its Cargo.toml's comment on why it depends on the
+            # svc-* crates directly) — in commonArgs rather than just
+            # gstreamerArgs/web-server's own args so
+            # `cargoArtifacts`/`buildDepsOnly` (which builds every
+            # workspace member's deps, the svc-* crates included) has it
+            # too.
             pkgs.protobuf
           ];
         };
@@ -134,115 +151,159 @@
         # to probe for Wayland/libva/GL at all, and those passthru fields
         # need to come from *our* trimmed `-base` (X11/Wayland/GL all off)
         # to actually be false, not from nixpkgs' stock one.
-        mkMinimalGst = p: let
-          base = (p.gst_all_1.gst-plugins-base.override {
-            enableX11 = false;
-            enableWayland = false;
-            enableAlsa = false;
-            enableCdparanoia = false;
-            withIntrospection = false;
-            enableDocumentation = false;
-          })
-          .overrideAttrs (old: {
-            mesonFlags =
-              old.mesonFlags
-              ++ [
-                "-Dauto_features=disabled"
-                # `auto_features=disabled` only pulls an *'auto'*-valued
-                # feature back to disabled -- `-base`'s own `mesonFlags`
-                # (above, in `old`) force `vorbis` to a hardcoded
-                # `enabled` unconditionally (no override arg gates it),
-                # so it has to be overridden explicitly here too or
-                # meson still requires `libvorbis` (dropped from
-                # `buildInputs` below) and fails the configure step.
-                "-Dvorbis=disabled"
-                "-Dplayback=enabled" # parsebin, decodebin
-                "-Dapp=enabled" # appsink, appsrc
-                "-Dvideoconvertscale=enabled" # videoconvert
-                "-Dtypefind=enabled" # backs parsebin/decodebin/qtdemux's type sniffing
-                "-Dorc=enabled"
-              ];
-            buildInputs = [p.orc];
-          });
+        mkMinimalGst = p:
+          let
+            base = (p.gst_all_1.gst-plugins-base.override {
+              enableX11 = false;
+              enableWayland = false;
+              enableAlsa = false;
+              enableCdparanoia = false;
+              withIntrospection = false;
+              enableDocumentation = false;
+            }).overrideAttrs (old: {
+              mesonFlags =
+                old.mesonFlags
+                ++ [
+                  "-Dauto_features=disabled"
+                  # `auto_features=disabled` only pulls an *'auto'*-valued
+                  # feature back to disabled -- `-base`'s own `mesonFlags`
+                  # (above, in `old`) force `vorbis` to a hardcoded
+                  # `enabled` unconditionally (no override arg gates it),
+                  # so it has to be overridden explicitly here too or
+                  # meson still requires `libvorbis` (dropped from
+                  # `buildInputs` below) and fails the configure step.
+                  "-Dvorbis=disabled"
+                  "-Dplayback=enabled" # parsebin, decodebin
+                  "-Dapp=enabled" # appsink, appsrc
+                  "-Dvideoconvertscale=enabled" # videoconvert
+                  "-Dtypefind=enabled" # backs parsebin/decodebin/qtdemux's type sniffing
+                  "-Dorc=enabled"
+                ];
+              buildInputs = [ p.orc ];
+            });
 
-          good = (p.gst_all_1.gst-plugins-good.override {
-            gst-plugins-base = base;
-            gtkSupport = false;
-            qt5Support = false;
-            qt6Support = false;
-            raspiCameraSupport = false;
-            enableJack = false;
-            enableX11 = false;
-            enableWayland = false;
-            enableDocumentation = false;
-          })
-          .overrideAttrs (old: {
-            mesonFlags =
-              old.mesonFlags
-              ++ [
-                "-Dauto_features=disabled"
-                # `-good`'s own `mesonFlags` hardcode `dv1394`/`oss`/
-                # `oss4`/`pulse`/`v4l2`/`v4l2-gudev` to
-                # `stdenv.hostPlatform.isLinux` -- true unconditionally
-                # here, no override arg gates it -- rather than leaving
-                # them at their `meson.options` 'auto' default, so
-                # `auto_features=disabled` never touches them; each needs
-                # overriding back to `disabled` explicitly instead (found
-                # by trying: v4l2 built fine off the host's own kernel
-                # headers with no pkg-config dep at all, then failed
-                # configure for real over `v4l2-gudev`'s `gudev-1.0`
-                # pkg-config dependency, which isn't in `buildInputs`
-                # below; `dv1394` failed the same way over `libraw1394`).
-                "-Ddv1394=disabled"
-                "-Doss=disabled"
-                "-Doss4=disabled"
-                "-Dpulse=disabled"
-                "-Dv4l2=disabled"
-                "-Dv4l2-gudev=disabled"
-                "-Disomp4=enabled" # qtdemux
-                "-Dmatroska=enabled" # matroskademux
-                "-Daudioparsers=enabled" # aacparse
-                "-Dmultifile=enabled" # splitmuxsink
-                "-Dorc=enabled"
-              ];
-            buildInputs = [base p.orc];
-          });
+            good = (p.gst_all_1.gst-plugins-good.override {
+              gst-plugins-base = base;
+              gtkSupport = false;
+              qt5Support = false;
+              qt6Support = false;
+              raspiCameraSupport = false;
+              enableJack = false;
+              enableX11 = false;
+              enableWayland = false;
+              enableDocumentation = false;
+            }).overrideAttrs (old: {
+              mesonFlags =
+                old.mesonFlags
+                ++ [
+                  "-Dauto_features=disabled"
+                  # `-good`'s own `mesonFlags` hardcode `dv1394`/`oss`/
+                  # `oss4`/`pulse`/`v4l2`/`v4l2-gudev` to
+                  # `stdenv.hostPlatform.isLinux` -- true unconditionally
+                  # here, no override arg gates it -- rather than leaving
+                  # them at their `meson.options` 'auto' default, so
+                  # `auto_features=disabled` never touches them; each needs
+                  # overriding back to `disabled` explicitly instead (found
+                  # by trying: v4l2 built fine off the host's own kernel
+                  # headers with no pkg-config dep at all, then failed
+                  # configure for real over `v4l2-gudev`'s `gudev-1.0`
+                  # pkg-config dependency, which isn't in `buildInputs`
+                  # below; `dv1394` failed the same way over `libraw1394`).
+                  "-Ddv1394=disabled"
+                  "-Doss=disabled"
+                  "-Doss4=disabled"
+                  "-Dpulse=disabled"
+                  "-Dv4l2=disabled"
+                  "-Dv4l2-gudev=disabled"
+                  "-Disomp4=enabled" # qtdemux
+                  "-Dmatroska=enabled" # matroskademux
+                  "-Daudioparsers=enabled" # aacparse
+                  "-Dmultifile=enabled" # splitmuxsink
+                  "-Dorc=enabled"
+                ];
+              buildInputs = [ base p.orc ];
+            });
 
-          bad = (p.gst_all_1.gst-plugins-bad.override {
-            gst-plugins-base = base;
-            enableGplPlugins = false;
-            bluezSupport = false;
-            ldacbtSupport = false;
-            webrtcAudioProcessingSupport = false;
-            # `ajaSupport` defaults to `lib.meta.availableOn ... libajantv2`,
-            # which resolves true on this platform even though the AJA
-            # NTV2 SDK itself isn't really fetchable in nixpkgs -- left at
-            # its default, `-Daja=enabled` fails configure hunting for a
-            # `libajantv2.pc` that doesn't exist. Same story as
-            # `openh264Support` below, just the opposite direction.
-            ajaSupport = false;
-            openh264Support = true;
-            enableDocumentation = false;
-          })
-          .overrideAttrs (old: {
-            mesonFlags =
-              old.mesonFlags
-              ++ [
-                "-Dauto_features=disabled"
-                # Same story as `-base`'s `vorbis` above: `-bad`'s own
-                # `mesonFlags` force `openaptx` to a hardcoded `enabled`
-                # unconditionally, needing `libfreeaptx` (dropped from
-                # `buildInputs` below).
-                "-Dopenaptx=disabled"
-                "-Dmpegtsmux=enabled"
-                "-Dvideoparsers=enabled" # h264parse, h265parse
-                "-Dopenh264=enabled" # openh264dec, decodebin's H.264 software decoder
-                "-Dlibde265=enabled" # libde265dec, decodebin's H.265 software decoder
-                "-Dorc=enabled"
-              ];
-            buildInputs = [base p.orc p.openh264 p.libde265];
+            bad = (p.gst_all_1.gst-plugins-bad.override {
+              gst-plugins-base = base;
+              enableGplPlugins = false;
+              bluezSupport = false;
+              ldacbtSupport = false;
+              webrtcAudioProcessingSupport = false;
+              # `ajaSupport` defaults to `lib.meta.availableOn ... libajantv2`,
+              # which resolves true on this platform even though the AJA
+              # NTV2 SDK itself isn't really fetchable in nixpkgs -- left at
+              # its default, `-Daja=enabled` fails configure hunting for a
+              # `libajantv2.pc` that doesn't exist. Same story as
+              # `openh264Support` below, just the opposite direction.
+              ajaSupport = false;
+              openh264Support = true;
+              enableDocumentation = false;
+            }).overrideAttrs (old: {
+              mesonFlags =
+                old.mesonFlags
+                ++ [
+                  "-Dauto_features=disabled"
+                  # Same story as `-base`'s `vorbis` above: `-bad`'s own
+                  # `mesonFlags` force `openaptx` to a hardcoded `enabled`
+                  # unconditionally, needing `libfreeaptx` (dropped from
+                  # `buildInputs` below).
+                  "-Dopenaptx=disabled"
+                  "-Dmpegtsmux=enabled"
+                  # `mpegtsmux`/`mpegtsdemux` are separate meson options
+                  # despite both living in the historical "mpegtsmux"
+                  # source tree -- `tsdemux` (from the latter) is what lets
+                  # `decodebin` read a rendition's own `.ts` segments back,
+                  # which the HLS-based poster-regen path (`hlsdemux` below
+                  # feeding straight into `decodebin`, see pipeline.rs's
+                  # `run_poster_only`/`build_poster_branch`, unchanged)
+                  # needs downstream of the demuxed HLS stream.
+                  "-Dmpegtsdemux=enabled" # tsdemux
+                  "-Dvideoparsers=enabled" # h264parse, h265parse
+                  "-Dopenh264=enabled" # openh264dec, decodebin's H.264 software decoder
+                  "-Dlibde265=enabled" # libde265dec, decodebin's H.265 software decoder
+                  # `hlsdemux`, so a poster/contact-sheet regen job can be
+                  # pointed at a video's own published rendition playlist
+                  # (`VideoSource::Url` to the `.m3u8`) instead of only its
+                  # original, possibly-no-longer-reachable `source_url` --
+                  # `decodebin` autoplugs it for `application/x-hls` the
+                  # same way it already autoplugs `qtdemux`/`matroskademux`
+                  # for other containers, so no pipeline.rs changes are
+                  # needed for this to work once the plugin exists.
+                  # `hls-crypto=openssl` is what lets it decrypt our own
+                  # AES-128 segments (`encrypt.rs`) via the `#EXT-X-KEY`
+                  # line `playlist.rs` writes -- picked over nettle/
+                  # libgcrypt purely because `p.openssl` is already a
+                  # dependency elsewhere in this flake, not for any
+                  # feature reason.
+                  "-Dhls=enabled"
+                  "-Dhls-crypto=openssl"
+                  "-Dorc=enabled"
+                ];
+              buildInputs = [ base p.orc p.openh264 p.libde265 p.openssl ];
+            });
+          in
+          { inherit base good bad; };
+
+        # `reqwesthttpsrc` (see `gstPackages`' comment below) hard-aborts
+        # the whole process on a zero-length, non-final HTTP/2 DATA frame --
+        # `create()` treats it as unreachable via `assert_ne!(chunk.len(),
+        # 0)`, but Cloudflare's Workers-assets edge does send that shape for
+        # large segment responses, and an `assert!` panicking inside a
+        # `PushSrcImpl::create` call isn't a `Result` `gst_adaptive_demux`
+        # can recover from -- it poisons `ReqwestHttpSrc::state`'s mutex,
+        # and the next `set_location` on any other `reqwesthttpsrc`
+        # instance (a normal, unrelated call) hits that poisoned lock from
+        # across a `extern "C"` GObject vtable call that can't unwind,
+        # aborting the process outright. The patch makes an empty `Some`
+        # chunk just poll again instead -- only a `None` chunk is really
+        # end-of-stream.
+        patchedGstPluginsRs = p:
+          (p.gst_all_1.gst-plugins-rs.override { plugins = [ "reqwest" ]; }).overrideAttrs (old: {
+            patches =
+              (old.patches or [ ])
+              ++ [ ./nix/patches/gst-plugins-rs-reqwesthttpsrc-skip-empty-chunk.patch ];
           });
-        in {inherit base good bad;};
 
         gstMinimal = mkMinimalGst pkgs;
 
@@ -263,7 +324,7 @@
           # all, and (since `plugins != [ "whisper" ]`) nixpkgs' own
           # `requiresBindgen` stays false too, so this doesn't drag cmake/
           # bindgen back in behind our backs either.
-          (gst-plugins-rs.override {plugins = ["reqwest"];})
+          (patchedGstPluginsRs pkgs)
           # Not a GStreamer package itself, but gstreamer-rs's core types
           # (Object, Element, ...) are GObjects -- glib/gobject/gio's libs
           # are always a runtime dependency, just not one `nix build`'s
@@ -276,10 +337,72 @@
           pkgs.glib
         ];
 
+        # Scoped with `-p` (like `svcLightArgs`/`frontendArgs`): without
+        # it `buildDepsOnly` would also build `lib-ffmpeg`'s dependency
+        # graph (ffmpeg-sys-next, which needs FFmpeg's headers), which
+        # this GStreamer-only scope deliberately doesn't have. FFmpeg is
+        # never pulled into the GStreamer build, or vice versa.
         gstreamerArgs =
           commonArgs
           // {
-            buildInputs = (commonArgs.buildInputs or []) ++ gstPackages;
+            buildInputs = (commonArgs.buildInputs or [ ]) ++ gstPackages;
+            cargoExtraArgs = "--locked -p lib-gstreamer -p svc-transcode -p web-server";
+          };
+
+        # lib-ffmpeg drives libav* through `ffmpeg-next`/`ffmpeg-sys-next`,
+        # which find FFmpeg via pkg-config (`pkgs.ffmpeg` provides both the
+        # libs and `.pc` files) and generate their bindings with bindgen
+        # (`bindgenHook` supplies libclang + its include paths). The default
+        # `pkgs.ffmpeg` includes libx264, which `RealignKeyframes` uses.
+        # No GStreamer input here -- the mirror image of `gstreamerArgs`.
+        # `ffmpeg-headless` (no X11/SDL/GTK/GStreamer/bluez... -- same
+        # reason `mkMinimalGst` exists: those don't cross-compile to
+        # aarch64) plus libx264 for `RealignKeyframes`. Headless still has
+        # VA-API, https (TLS) and the hls muxer.
+        mkMinimalFfmpeg = p:
+          (p.ffmpeg-headless.override {
+            withHeadlessDeps = false;
+            withVaapi = !p.stdenv.hostPlatform.isStatic;
+            withX264 = true; # libx264 encoder (needs withGPL, which is the default)
+            withNetwork = true;
+            withGnutls = true; # HTTPS; drop it if you only use HLS over plain HTTP or local files
+            withZlib = true; # gzip/deflate HTTP responses; tiny and commonly needed
+            buildFfmpeg = true;
+            buildFfprobe = true;
+            buildFfplay = false;
+            buildAvcodec = true;
+            buildAvformat = true;
+            buildAvfilter = true; # needed for -vf scale_vaapi, hwupload, etc.
+            buildAvutil = true;
+            buildSwresample = true;
+            buildSwscale = true; # software scaling/pixel conversion for libx264
+            buildAvdevice = false; # capture devices (v4l2, alsa); not needed
+
+            # --- Build hygiene --------------------------------------------------
+            withSafeBitstreamReader = true; # bounds checking; recommended with untrusted streams
+            withHardcodedTables = true; # build-time only, no extra deps
+
+            # No documentation
+            withHtmlDoc = false;
+            withManPages = false;
+            withPodDoc = false;
+            withTxtDoc = false;
+          }).overrideAttrs (_: {
+            # `make check` builds FFmpeg's own test programs, which fail to
+            # compile under static musl (e.g. libavutil/tests/pixelutils.c).
+            doCheck = false;
+          });
+        ffmpegPackages = [ (mkMinimalFfmpeg pkgs) ];
+
+        ffmpegArgs =
+          commonArgs
+          // {
+            pname = "next_file_browser-ffmpeg";
+            buildInputs = (commonArgs.buildInputs or [ ]) ++ ffmpegPackages;
+            nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ pkgs.rustPlatform.bindgenHook ];
+            # `svc-transcode`'s `ffmpeg` feature (default `gstreamer` off) is
+            # what makes it link lib-ffmpeg instead of lib-gstreamer.
+            cargoExtraArgs = "--locked -p lib-ffmpeg -p svc-transcode --no-default-features --features svc-transcode/ffmpeg";
           };
 
         frontendArgs =
@@ -294,13 +417,13 @@
             cargoExtraArgs = "-p web-frontend";
 
             buildInputs =
-              (commonArgs.buildInputs or [])
+              (commonArgs.buildInputs or [ ])
               ++ [
                 pkgs.openssl
               ];
 
             nativeBuildInputs =
-              (commonArgs.nativeBuildInputs or [])
+              (commonArgs.nativeBuildInputs or [ ])
               ++ [
                 pkgs.dioxus-cli
                 # No pkgs.wasm-bindgen-cli here on purpose: on nixpkgs >=25.11,
@@ -325,17 +448,28 @@
         # `svc-assets`/`svc-download` failing to build at all in a
         # from-scratch sandbox with no system `glib-2.0` (`pkg-config`)
         # once this crate had no other reason to bring `gstPackages` in
-        # transitively via `cargoArtifacts`. Naming both packages in one
+        # transitively via `cargoArtifacts`. `web-server` joined this tier
+        # once its own `lib-gstreamer` dependency edge went
+        # `default-features = false`, and it started depending on
+        # `lib-transcode-client` (which itself hardcodes that same
+        # `default-features = false`) instead of `svc-transcode` itself
+        # (see those crates' Cargo.toml comments) -- it no longer touches
+        # GStreamer either, just the `Transcoder` trait/types, so it
+        # belongs here rather than under `gstreamerArgs` below. The three
+        # `lib-*-client` crates (lib-only, no binary of their own) don't
+        # need their own `-p` entry -- `cargo build -p web-server` already
+        # pulls each in transitively as a path dependency. Naming all three
         # `cargoExtraArgs` (rather than a separate scope each) builds
-        # their heavily-overlapping shared deps (tonic/prost/tokio/reqwest)
-        # once instead of twice.
+        # their heavily-overlapping shared deps (tonic/prost/tokio/reqwest/
+        # axum) once instead of three times.
         svcLightArgs =
           commonArgs
           // {
-            cargoExtraArgs = "-p svc-assets -p svc-download";
+            cargoExtraArgs = "-p svc-assets -p svc-download -p web-server";
           };
 
         gstreamerCargoArtifacts = craneLib.buildDepsOnly gstreamerArgs;
+        ffmpegCargoArtifacts = craneLib.buildDepsOnly ffmpegArgs;
         frontendCargoArtifacts = craneLib.buildDepsOnly frontendArgs;
         svcLightCargoArtifacts = craneLib.buildDepsOnly svcLightArgs;
 
@@ -343,21 +477,28 @@
           commonArgs
           // {
             cargoArtifacts = svcLightCargoArtifacts;
-            inherit (craneLib.crateNameFromCargoToml {inherit src;}) version;
+            inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
           };
 
         gstreamerIndividualCrateArgs =
           gstreamerArgs
           // {
             cargoArtifacts = gstreamerCargoArtifacts;
-            inherit (craneLib.crateNameFromCargoToml {inherit src;}) version;
+            inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
+          };
+
+        ffmpegIndividualCrateArgs =
+          ffmpegArgs
+          // {
+            cargoArtifacts = ffmpegCargoArtifacts;
+            inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
           };
 
         frontendIndividualCrateArgs =
           frontendArgs
           // {
             cargoArtifacts = frontendCargoArtifacts;
-            inherit (craneLib.crateNameFromCargoToml {inherit src;}) version;
+            inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
           };
 
         fileSetForCrate = crate:
@@ -385,14 +526,22 @@
               # there or that macro fails with "error canonicalizing
               # migration directory".
               ./crates/libs/lib-db/migrations
-              # Same story: lib-proto's build.rs shells out to `protoc`
-              # against `proto/*.proto` at *compile* time (see
+              # Same story: each lib-*-client's own build.rs (the proto
+              # codegen now lives there, not in svc-transcode/svc-assets/
+              # svc-download themselves -- see those crates' Cargo.toml
+              # comments) shells out to `protoc` against its own
+              # `proto/*.proto` at *compile* time (see
               # commonArgs.nativeBuildInputs's comment on that build.rs) --
               # `commonCargoSources` doesn't sweep up non-Rust files, so
-              # without this every crate depending on lib-proto (i.e. every
-              # svc-* service, and web-server transitively) fails to build
-              # with "protoc failed: ... No such file or directory".
-              ./crates/libs/lib-proto/proto
+              # without these every lib-*-client (and svc-*/web-server
+              # transitively) fails to build with "protoc failed: ... No
+              # such file or directory".
+              ./crates/libs/lib-transcode-client/proto
+              ./crates/libs/lib-assets-client/proto
+              ./crates/libs/lib-download-client/proto
+              # lib-transcode's `conformance` suite reads these small media
+              # fixtures at *test* time (see `checks` below).
+              ./crates/libs/lib-transcode/fixtures
               # Same story as the migrations dir above: dioxus's
               # `asset!("/assets/tailwind.css")` (app.rs) checks the file
               # actually exists at *compile* time, and `commonCargoSources`
@@ -405,46 +554,29 @@
               # falls back to its own generic default index.html instead
               # of this project's.
               ./crates/services/web-frontend/index.html
-              (craneLib.fileset.commonCargoSources ./crates/workspace-hackari)
               (craneLib.fileset.commonCargoSources crate)
             ];
           };
 
+        # `web-server` used to link GStreamer directly (the in-process
+        # `Transcoder`/`AssetStore` fallback) and needed the same RPATH/
+        # `GST_PLUGIN_SYSTEM_PATH_1_0` wrapping `svc-transcode` still does
+        # below. That fallback is gone -- `SVC_TRANSCODE_ADDR`/
+        # `SVC_ASSETS_ADDR`/`SVC_DOWNLOAD_ADDR` are required now (fails
+        # startup outright rather than silently running the heavy backend
+        # in-process, see `main.rs`'s module doc), and web-server depends
+        # on `lib-transcode-client` (not `svc-transcode` itself), which
+        # hardcodes `lib-gstreamer`'s `default-features = false` (see
+        # those crates' own Cargo.toml comments) -- so this is a plain
+        # `svcLightIndividualCrateArgs` build now, same shape as
+        # `svc-assets`/`svc-download` below: no `gstPackages`
+        # `buildInputs`, no `autoPatchelfHook`/`postFixup` RPATH dance.
         web-server = craneLib.buildPackage (
-          gstreamerIndividualCrateArgs
+          svcLightIndividualCrateArgs
           // {
             pname = "web-server";
             cargoExtraArgs = "-p web-server";
             src = fileSetForCrate ./crates/services/web-server;
-
-            # Same split-output problem `ffmpeg-headless` used to have:
-            # `gstreamerArgs.buildInputs` above pulls in each `gstPackages`
-            # entry's `dev` output (headers + .pc files pkg-config needs to
-            # *link*), but that alone puts nothing on the resulting binary's
-            # RPATH and nothing in Nix's closure scan -- so a plain
-            # `cargo`-built binary resolves `libgstreamer-1.0.so` et al only
-            # by accident of the devShell's `LD_LIBRARY_PATH` (below), and
-            # fails for real under `nix run`/the `web-server-image`
-            # container. Explicitly listing each package's `.out` (its
-            # runtime libs) plus running `autoPatchelfHook` (scoped to just
-            # this derivation, same reasoning as the old ffmpeg-headless
-            # comment here) patches a real RPATH in during fixupPhase and
-            # gets these picked up as runtime closure dependencies too.
-            buildInputs = gstreamerIndividualCrateArgs.buildInputs ++ map (p: p.out) gstPackages;
-            nativeBuildInputs = gstreamerIndividualCrateArgs.nativeBuildInputs ++ [pkgs.autoPatchelfHook pkgs.makeWrapper];
-
-            # RPATH (patched above) is enough for the binary to `dlopen`
-            # libgstreamer-1.0.so itself, but GStreamer's *element* registry
-            # (parsebin, mpegtsmux, splitmuxsink, souphttpsrc, ...) is found
-            # by scanning `lib/gstreamer-1.0/` under `GST_PLUGIN_SYSTEM_PATH_1_0`
-            # at runtime -- there's no FHS `/usr/lib/gstreamer-1.0` for it to
-            # fall back to in the Nix store, so without this every pipeline
-            # build fails with "no element ... found" however the binary is
-            # invoked (bare `nix run`, or the `web-server-image` container).
-            postFixup = ''
-              wrapProgram $out/bin/web-server \
-                --set GST_PLUGIN_SYSTEM_PATH_1_0 "${lib.concatMapStringsSep ":" (p: "${p.out}/lib/gstreamer-1.0") gstPackages}"
-            '';
           }
         );
 
@@ -462,12 +594,116 @@
             src = fileSetForCrate ./crates/services/svc-transcode;
 
             buildInputs = gstreamerIndividualCrateArgs.buildInputs ++ map (p: p.out) gstPackages;
-            nativeBuildInputs = gstreamerIndividualCrateArgs.nativeBuildInputs ++ [pkgs.autoPatchelfHook pkgs.makeWrapper];
+            nativeBuildInputs = gstreamerIndividualCrateArgs.nativeBuildInputs ++ [ pkgs.autoPatchelfHook pkgs.makeWrapper ];
 
             postFixup = ''
               wrapProgram $out/bin/svc-transcode \
                 --set GST_PLUGIN_SYSTEM_PATH_1_0 "${lib.concatMapStringsSep ":" (p: "${p.out}/lib/gstreamer-1.0") gstPackages}"
             '';
+          }
+        );
+
+        # The same gRPC service built against FFmpeg instead of GStreamer
+        # (`--no-default-features --features ffmpeg`): a separate binary and
+        # image so a deployment ships exactly one media stack. libav* is
+        # linked directly (no plugin registry to point at, unlike GStreamer),
+        # so the cc wrapper's RPATH is enough -- no autoPatchelf/wrapProgram.
+        svc-transcode-ffmpeg = craneLib.buildPackage (
+          ffmpegIndividualCrateArgs
+          // {
+            pname = "svc-transcode-ffmpeg";
+            cargoExtraArgs = "--locked -p svc-transcode --no-default-features --features ffmpeg";
+            src = fileSetForCrate ./crates/services/svc-transcode;
+            # crane names the installed binary after the crate.
+            postInstall = ''
+              mv $out/bin/svc-transcode $out/bin/svc-transcode-ffmpeg
+            '';
+          }
+        );
+
+        # Library packages, one per transcoding crate: `nix build
+        # .#lib-transcode|lib-gstreamer|lib-ffmpeg` compiles just that crate
+        # (against only its own native inputs) and installs its rlib.
+        mkLibPackage =
+          { name
+          , args
+          , artifacts
+          ,
+          }:
+          craneLib.mkCargoDerivation (
+            args
+            // {
+              pname = name;
+              inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
+              cargoArtifacts = artifacts;
+              src = fileSetForCrate ./crates/libs/${name};
+              cargoExtraArgs = "--locked -p ${name}";
+              buildPhaseCargoCommand = "cargo build --release --locked -p ${name}";
+              doInstallCargoArtifacts = false;
+              installPhaseCommand = ''
+                mkdir -p $out/lib
+                cp target/release/lib${lib.replaceStrings ["-"] ["_"] name}.rlib $out/lib/
+              '';
+            }
+          );
+
+        # lib-transcode has no native deps at all, so it builds against the
+        # plain (input-free) common args -- the point of the crate.
+        libTranscodeArgs =
+          commonArgs
+          // {
+            pname = "next_file_browser-lib-transcode";
+            cargoExtraArgs = "--locked -p lib-transcode";
+          };
+        lib-transcode = mkLibPackage {
+          name = "lib-transcode";
+          args = libTranscodeArgs;
+          artifacts = craneLib.buildDepsOnly libTranscodeArgs;
+        };
+        lib-gstreamer = mkLibPackage {
+          name = "lib-gstreamer";
+          args = gstreamerArgs;
+          artifacts = gstreamerCargoArtifacts;
+        };
+        lib-ffmpeg = mkLibPackage {
+          name = "lib-ffmpeg";
+          args = ffmpegArgs;
+          artifacts = ffmpegCargoArtifacts;
+        };
+
+        # Runs the shared `lib-transcode` conformance suite (plus each
+        # backend's own tests) in the sandbox, against both backends. The
+        # suite shells out to `ffprobe`, and lib-gstreamer's older
+        # fixture-generating tests to `ffmpeg`, hence `pkgs.ffmpeg` as a
+        # test-only tool; GStreamer additionally needs its plugin registry
+        # pointed at (see the `svc-transcode` wrapper / devShell).
+        testSrc = fileSetForCrate ./crates/libs/lib-transcode;
+        lib-gstreamer-tests = craneLib.cargoTest (
+          gstreamerArgs
+          // {
+            src = testSrc;
+            cargoArtifacts = gstreamerCargoArtifacts;
+            cargoExtraArgs = "--locked -p lib-transcode -p lib-gstreamer";
+            # `commonArgs` sets doCheck = false (web-server/lib-db need Postgres);
+            # these are pure media tests, so turn it back on.
+            doCheck = true;
+            nativeCheckInputs = [ pkgs.ffmpeg ];
+            GST_PLUGIN_SYSTEM_PATH_1_0 = lib.concatMapStringsSep ":" (p: "${p}/lib/gstreamer-1.0") gstPackages;
+            # No rpath patching yet at cargo-test time (see the devShell).
+            LD_LIBRARY_PATH = lib.makeLibraryPath gstPackages;
+          }
+        );
+        lib-ffmpeg-tests = craneLib.cargoTest (
+          ffmpegArgs
+          // {
+            src = testSrc;
+            cargoArtifacts = ffmpegCargoArtifacts;
+            cargoExtraArgs = "--locked -p lib-transcode -p lib-ffmpeg";
+            LD_LIBRARY_PATH = lib.makeLibraryPath ffmpegPackages;
+            # `commonArgs` sets doCheck = false (web-server/lib-db need Postgres);
+            # these are pure media tests, so turn it back on.
+            doCheck = true;
+            nativeCheckInputs = [ pkgs.ffmpeg ];
           }
         );
 
@@ -526,9 +762,16 @@
         # ---------------------------------------------------------------
         crossEnabled = system == "x86_64-linux";
 
-        armPkgsCross = pkgs.pkgsCross.aarch64-multiplatform;
-        armTargetTriple = "aarch64-unknown-linux-gnu";
-        armTargetEnv = lib.toUpper (builtins.replaceStrings ["-"] ["_"] armTargetTriple);
+        # Static musl: every arm64 binary is fully self-contained (no glibc,
+        # no RPATH/`patchelf`/`autoPatchelfHook` story -- the reason the old
+        # gnu variant needed hand-set RPATHs), so images are just binary +
+        # CA bundle. `armPkgsCross` is the `pkgsStatic` set (static `.a`
+        # libs, used for linking); `armPkgsMusl` is the plain musl cross set
+        # (only for `dockerTools`, so the image's Architecture is "arm64").
+        armPkgsMusl = pkgs.pkgsCross.aarch64-multiplatform-musl;
+        armPkgsCross = armPkgsMusl.pkgsStatic;
+        armTargetTriple = "aarch64-unknown-linux-musl";
+        armTargetEnv = lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] armTargetTriple);
 
         armRustToolchain = fenix.packages.${system}.combine [
           fenix.packages.${system}.stable.toolchain
@@ -561,7 +804,7 @@
             PKG_CONFIG_ALLOW_CROSS = "1";
 
             nativeBuildInputs =
-              (commonArgs.nativeBuildInputs or [])
+              (commonArgs.nativeBuildInputs or [ ])
               ++ [
                 # The pkg-config *binary* still has to run on the build
                 # host (x86_64) -- but wrapped (via nixpkgs' splicing) to
@@ -574,79 +817,65 @@
               ];
           };
 
-        # Same package list as the native `gstPackages` (including the same
-        # `reqwest`-only `gst-plugins-rs.override`, and the same
-        # `mkMinimalGst` trim -- see its comment: shedding gtk3/qt5/qt6/
-        # pango/GL/X11/Wayland/bluez/webrtc/... here is the whole point,
-        # since those are exactly the C libraries most likely to *not*
-        # cross-compile to aarch64 cleanly, or at all), just resolved
-        # against `armPkgsCross` so each one is the aarch64 build
-        # (nixpkgs' splicing still hands back an x86_64-hosted
-        # `pkg-config`/etc. for anything in `nativeBuildInputs`, same
-        # story as above).
-        armGstMinimal = mkMinimalGst armPkgsCross;
-
-        armGstPackages = with armPkgsCross.gst_all_1; [
-          gstreamer
-          armGstMinimal.base
-          armGstMinimal.good
-          armGstMinimal.bad
-          (gst-plugins-rs.override {plugins = ["reqwest"];})
-          armPkgsCross.glib
-        ];
-
-        armGstreamerArgs =
+        # `armPkgsCross.ffmpeg` is the static aarch64 libav* (linked via the cross pkg-config wrapper
+        # from `armCommonArgs`); `bindgenHook` from the cross package set
+        # points bindgen's libclang at the aarch64 sysroot headers.
+        armFfmpegPackages = [ (mkMinimalFfmpeg armPkgsCross) ];
+        armFfmpegArgs =
           armCommonArgs
           // {
-            buildInputs = (armCommonArgs.buildInputs or []) ++ armGstPackages;
+            pname = "next_file_browser-ffmpeg";
+            # Link libav*/x264 statically (musl, no dynamic loader at runtime).
+            PKG_CONFIG_ALL_STATIC = "1";
+            buildInputs = (armCommonArgs.buildInputs or [ ]) ++ armFfmpegPackages;
+            nativeBuildInputs = armCommonArgs.nativeBuildInputs ++ [ armPkgsCross.rustPlatform.bindgenHook ];
+            cargoExtraArgs = "--locked -p lib-ffmpeg -p svc-transcode --no-default-features --features svc-transcode/ffmpeg";
           };
 
-        # Matches `svcLightArgs` above: `-p svc-assets -p svc-download`
-        # built (and dep-cached) together, GStreamer nowhere in reach.
+        # Matches `svcLightArgs` above: `-p svc-assets -p svc-download -p
+        # web-server` built (and dep-cached) together, GStreamer nowhere
+        # in reach.
         armSvcLightArgs =
           armCommonArgs
           // {
-            cargoExtraArgs = "-p svc-assets -p svc-download";
+            cargoExtraArgs = "-p svc-assets -p svc-download -p web-server";
           };
 
-        armGstreamerCargoArtifacts = armCraneLib.buildDepsOnly armGstreamerArgs;
         armSvcLightCargoArtifacts = armCraneLib.buildDepsOnly armSvcLightArgs;
-
-        armGstreamerIndividualCrateArgs =
-          armGstreamerArgs
-          // {
-            cargoArtifacts = armGstreamerCargoArtifacts;
-            inherit (armCraneLib.crateNameFromCargoToml {inherit src;}) version;
-          };
+        armFfmpegCargoArtifacts = armCraneLib.buildDepsOnly armFfmpegArgs;
 
         armSvcLightIndividualCrateArgs =
           armCommonArgs
           // {
             cargoArtifacts = armSvcLightCargoArtifacts;
-            inherit (armCraneLib.crateNameFromCargoToml {inherit src;}) version;
+            inherit (armCraneLib.crateNameFromCargoToml { inherit src; }) version;
           };
 
-        # Same RPATH/plugin-registry story as the native `svc-transcode`
-        # above (see its comment) -- `autoPatchelfHook`/`makeWrapper` taken
-        # from `armPkgsCross` so the patching and the wrapper script itself
-        # both target aarch64 (nixpkgs' splicing resolves these hooks back
-        # to build-host-runnable tools regardless; only the *output* --
-        # the patched RPATHs and the wrapper's own shebang interpreter --
-        # ends up aarch64).
-        svc-transcode-aarch64 = armCraneLib.buildPackage (
-          armGstreamerIndividualCrateArgs
+        # FFmpeg-backed svc-transcode for arm64: libav* is linked statically
+        # into a musl binary, so no RPATH fixup -- just rename the binary.
+        svc-transcode-ffmpeg-aarch64 = armCraneLib.buildPackage (
+          armFfmpegArgs
           // {
-            pname = "svc-transcode";
-            cargoExtraArgs = "-p svc-transcode";
+            cargoArtifacts = armFfmpegCargoArtifacts;
+            inherit (armCraneLib.crateNameFromCargoToml { inherit src; }) version;
+            pname = "svc-transcode-ffmpeg";
+            cargoExtraArgs = "--locked -p svc-transcode --no-default-features --features ffmpeg";
             src = fileSetForCrate ./crates/services/svc-transcode;
-
-            buildInputs = armGstreamerIndividualCrateArgs.buildInputs ++ map (p: p.out) armGstPackages;
-            nativeBuildInputs = armGstreamerIndividualCrateArgs.nativeBuildInputs ++ [armPkgsCross.autoPatchelfHook armPkgsCross.makeWrapper];
-
             postFixup = ''
-              wrapProgram $out/bin/svc-transcode \
-                --set GST_PLUGIN_SYSTEM_PATH_1_0 "${lib.concatMapStringsSep ":" (p: "${p.out}/lib/gstreamer-1.0") armGstPackages}"
+              mv $out/bin/svc-transcode $out/bin/svc-transcode-ffmpeg
             '';
+          }
+        );
+
+        # `web-server` no longer links GStreamer at all (see the native
+        # `web-server` package's comment) -- plain `armSvcLightIndividualCrateArgs`,
+        # same shape as `svc-assets-aarch64`/`svc-download-aarch64` below.
+        web-server-aarch64 = armCraneLib.buildPackage (
+          armSvcLightIndividualCrateArgs
+          // {
+            pname = "web-server";
+            cargoExtraArgs = "-p web-server";
+            src = fileSetForCrate ./crates/services/web-server;
           }
         );
 
@@ -703,32 +932,32 @@
           }
         );
         # x86_64-linux/aarch64-linux only -- dockerTools has nothing to
-        # build on Darwin. Native only for now: no cross-compiling
-        # web-server (its gstreamerArgs pkg-config-link against `gstPackages`,
-        # which don't cross-build for free) so this image targets whatever
-        # `system` it's built on, not a fixed architecture.
+        # build on Darwin. Targets whatever `system` it's built on, not a
+        # fixed architecture -- see `web-server-image-aarch64` below for
+        # the arm64 cross-compiled counterpart.
         web-server-image = pkgs.dockerTools.buildLayeredImage {
           name = "web-server";
           tag = "latest";
           created = "now";
 
-          # Just the closure `web-server` actually needs at runtime:
-          # itself (already rpath-wrapped against the GStreamer libs
-          # by `nix build`) plus a CA bundle for the outbound HTTPS calls
-          # to Cloudflare's API (lib_cloudflare's reqwest) -- cheap
-          # insurance whether or not the rustls build actually needed it
-          # (see lib-cloudflare/Cargo.toml's reqwest features).
-          contents = [pkgs.cacert web-server];
+          # Just the closure `web-server` actually needs at runtime: no
+          # GStreamer libs anymore (see the `web-server` package comment
+          # above), just itself plus a CA bundle -- rustls-over-HTTPS to
+          # each `svc-*` instance is unlikely to ever need this in
+          # practice (plain `http://` inside a private network is the
+          # documented example, see `GRPC_MIGRATION.md`), but it's cheap
+          # insurance if one's ever fronted by TLS.
+          contents = [ pkgs.cacert web-server ];
 
           config = {
-            Cmd = ["${web-server}/bin/web-server"];
+            Cmd = [ "${web-server}/bin/web-server" ];
             # Writable at runtime (the container's overlay, not the R/O
             # nix store) -- `LOCAL_ASSETS_DIR` (default "data/assets",
             # relative to this) is `create_dir_all`'d on startup. Mount a
             # volume here to persist it across container recreates.
             WorkingDir = "/data";
-            Env = ["SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"];
-            ExposedPorts = {"3001/tcp" = {};};
+            Env = [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            ExposedPorts = { "3001/tcp" = { }; };
           };
         };
 
@@ -741,13 +970,41 @@
           name = "svc-transcode";
           tag = "latest";
           created = "now";
-          contents = [pkgs.cacert svc-transcode];
+          contents = [ pkgs.cacert svc-transcode ];
           config = {
-            Cmd = ["${svc-transcode}/bin/svc-transcode"];
-            Env = ["SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"];
+            Cmd = [ "${svc-transcode}/bin/svc-transcode" ];
+            Env = [
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              # Keeps splitmuxsink's segment writes and the
+              # poster/contact-sheet decode branch off disk (see
+              # service.rs::scratch_dir, .env.example) -- Docker/OCI's
+              # default /dev/shm is only 64MB though, so whatever runs
+              # this image still has to size it up itself (e.g. `docker
+              # run --shm-size 2g`, or the equivalent tmpfs volume size
+              # on reze-pi's compose/k8s config) or GStreamer will hit
+              # ENOSPC partway through a job.
+              "SVC_TRANSCODE_SCRATCH_DIR=/dev/shm"
+            ];
             # Matches `SVC_TRANSCODE_ADDR`'s default in
             # crates/services/GRPC_MIGRATION.md.
-            ExposedPorts = {"50051/tcp" = {};};
+            ExposedPorts = { "50051/tcp" = { }; };
+          };
+        };
+
+        # FFmpeg-backed counterpart of `svc-transcode-image`: same service,
+        # same port and scratch-dir convention, no GStreamer in the closure.
+        svc-transcode-ffmpeg-image = pkgs.dockerTools.buildLayeredImage {
+          name = "svc-transcode-ffmpeg";
+          tag = "latest";
+          created = "now";
+          contents = [ pkgs.cacert svc-transcode-ffmpeg ];
+          config = {
+            Cmd = [ "${svc-transcode-ffmpeg}/bin/svc-transcode-ffmpeg" ];
+            Env = [
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "SVC_TRANSCODE_SCRATCH_DIR=/dev/shm"
+            ];
+            ExposedPorts = { "50051/tcp" = { }; };
           };
         };
 
@@ -760,11 +1017,11 @@
           name = "svc-assets";
           tag = "latest";
           created = "now";
-          contents = [pkgs.cacert svc-assets];
+          contents = [ pkgs.cacert svc-assets ];
           config = {
-            Cmd = ["${svc-assets}/bin/svc-assets"];
-            Env = ["SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"];
-            ExposedPorts = {"50052/tcp" = {};};
+            Cmd = [ "${svc-assets}/bin/svc-assets" ];
+            Env = [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            ExposedPorts = { "50052/tcp" = { }; };
           };
         };
 
@@ -772,16 +1029,16 @@
           name = "svc-download";
           tag = "latest";
           created = "now";
-          contents = [pkgs.cacert svc-download];
+          contents = [ pkgs.cacert svc-download ];
           config = {
-            Cmd = ["${svc-download}/bin/svc-download"];
-            Env = ["SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"];
-            ExposedPorts = {"50053/tcp" = {};};
+            Cmd = [ "${svc-download}/bin/svc-download" ];
+            Env = [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            ExposedPorts = { "50053/tcp" = { }; };
           };
         };
 
         # arm64 counterparts of the three images above, built from the
-        # `*-aarch64` derivations. `armPkgsCross.dockerTools` (not
+        # `*-aarch64` derivations. `armPkgsMusl.dockerTools` (not
         # `pkgs.dockerTools`) so the image's own Architecture metadata comes
         # out "arm64" -- layer assembly itself (tar/gzip) still just runs on
         # the build host, no emulation needed either way. Tagged
@@ -790,45 +1047,67 @@
         # multi-arch manifest afterwards (e.g. `docker manifest create` /
         # `docker buildx imagetools create`) without one overwriting the
         # other.
-        svc-transcode-image-aarch64 = armPkgsCross.dockerTools.buildLayeredImage {
-          name = "svc-transcode";
+        svc-transcode-ffmpeg-image-aarch64 = armPkgsMusl.dockerTools.buildLayeredImage {
+          name = "svc-transcode-ffmpeg";
           tag = "linux-arm64";
           created = "now";
-          contents = [armPkgsCross.cacert svc-transcode-aarch64];
+          contents = [ armPkgsMusl.cacert svc-transcode-ffmpeg-aarch64 ];
           config = {
-            Cmd = ["${svc-transcode-aarch64}/bin/svc-transcode"];
-            Env = ["SSL_CERT_FILE=${armPkgsCross.cacert}/etc/ssl/certs/ca-bundle.crt"];
-            ExposedPorts = {"50051/tcp" = {};};
+            Cmd = [ "${svc-transcode-ffmpeg-aarch64}/bin/svc-transcode-ffmpeg" ];
+            Env = [
+              "SSL_CERT_FILE=${armPkgsMusl.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "SVC_TRANSCODE_SCRATCH_DIR=/dev/shm"
+            ];
+            ExposedPorts = { "50051/tcp" = { }; };
           };
         };
 
-        svc-assets-image-aarch64 = armPkgsCross.dockerTools.buildLayeredImage {
+        svc-assets-image-aarch64 = armPkgsMusl.dockerTools.buildLayeredImage {
           name = "svc-assets";
           tag = "linux-arm64";
           created = "now";
-          contents = [armPkgsCross.cacert svc-assets-aarch64];
+          contents = [ armPkgsMusl.cacert svc-assets-aarch64 ];
           config = {
-            Cmd = ["${svc-assets-aarch64}/bin/svc-assets"];
-            Env = ["SSL_CERT_FILE=${armPkgsCross.cacert}/etc/ssl/certs/ca-bundle.crt"];
-            ExposedPorts = {"50052/tcp" = {};};
+            Cmd = [ "${svc-assets-aarch64}/bin/svc-assets" ];
+            Env = [ "SSL_CERT_FILE=${armPkgsMusl.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            ExposedPorts = { "50052/tcp" = { }; };
           };
         };
 
-        svc-download-image-aarch64 = armPkgsCross.dockerTools.buildLayeredImage {
+        svc-download-image-aarch64 = armPkgsMusl.dockerTools.buildLayeredImage {
           name = "svc-download";
           tag = "linux-arm64";
           created = "now";
-          contents = [armPkgsCross.cacert svc-download-aarch64];
+          contents = [ armPkgsMusl.cacert svc-download-aarch64 ];
           config = {
-            Cmd = ["${svc-download-aarch64}/bin/svc-download"];
-            Env = ["SSL_CERT_FILE=${armPkgsCross.cacert}/etc/ssl/certs/ca-bundle.crt"];
-            ExposedPorts = {"50053/tcp" = {};};
+            Cmd = [ "${svc-download-aarch64}/bin/svc-download" ];
+            Env = [ "SSL_CERT_FILE=${armPkgsMusl.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            ExposedPorts = { "50053/tcp" = { }; };
           };
         };
-      in {
+
+        # Same story as `web-server-image` above, cross-compiled -- the
+        # asset dir (`LOCAL_ASSETS_DIR`, default "data/assets") is
+        # `create_dir_all`'d on startup same as the native image, so
+        # `WorkingDir = "/data"` is carried over here too.
+        web-server-image-aarch64 = armPkgsMusl.dockerTools.buildLayeredImage {
+          name = "web-server";
+          tag = "linux-arm64";
+          created = "now";
+          contents = [ armPkgsMusl.cacert web-server-aarch64 ];
+          config = {
+            Cmd = [ "${web-server-aarch64}/bin/web-server" ];
+            WorkingDir = "/data";
+            Env = [ "SSL_CERT_FILE=${armPkgsMusl.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+            ExposedPorts = { "3001/tcp" = { }; };
+          };
+        };
+      in
+      {
         packages =
           {
-            inherit web-server web-frontend svc-transcode svc-assets svc-download;
+            inherit web-server web-frontend svc-transcode svc-transcode-ffmpeg svc-assets svc-download;
+            inherit lib-transcode lib-gstreamer lib-ffmpeg;
             default = web-frontend;
 
             # Exposed so a manifests-only checkout (Cargo.toml/Cargo.lock/
@@ -854,27 +1133,27 @@
             # `cargo-deps-frontend` is wasm32-only, as before.
             cargo-deps-svc-light = svcLightCargoArtifacts;
             cargo-deps-gstreamer = gstreamerCargoArtifacts;
+            cargo-deps-ffmpeg = ffmpegCargoArtifacts;
             cargo-deps-frontend = frontendCargoArtifacts;
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            inherit web-server-image svc-transcode-image svc-assets-image svc-download-image;
+            inherit web-server-image svc-transcode-image svc-transcode-ffmpeg-image svc-assets-image svc-download-image;
           }
           // lib.optionalAttrs crossEnabled {
-            inherit svc-transcode-aarch64 svc-assets-aarch64 svc-download-aarch64;
-            inherit svc-transcode-image-aarch64 svc-assets-image-aarch64 svc-download-image-aarch64;
+            inherit web-server-aarch64 svc-transcode-ffmpeg-aarch64 svc-assets-aarch64 svc-download-aarch64;
+            inherit web-server-image-aarch64 svc-transcode-ffmpeg-image-aarch64 svc-assets-image-aarch64 svc-download-image-aarch64;
 
-            # Same warm-the-Cachix-cache story as `cargo-deps-svc-light`/
-            # `cargo-deps-gstreamer` above, just for the arm64 target --
-            # without pushing these too, every cross build (CI or anyone
-            # else's machine) redoes the from-scratch GStreamer-for-aarch64
-            # compile `armGstreamerCargoArtifacts` triggers the first time
-            # (nixpkgs' cross Hydra jobsets don't cover the full GStreamer
-            # + gst-plugins-rs stack, so this one in particular is *not*
-            # already sitting on cache.nixos.org the way native aarch64-
-            # linux packages usually are).
+            # Warm-the-Cachix-cache story as above, for the static musl
+            # arm64 target (no GStreamer variant: it dlopens plugins, which
+            # a static musl binary can't do).
             cargo-deps-svc-light-aarch64 = armSvcLightCargoArtifacts;
-            cargo-deps-gstreamer-aarch64 = armGstreamerCargoArtifacts;
+            cargo-deps-ffmpeg-aarch64 = armFfmpegCargoArtifacts;
           };
+
+        checks = {
+          # lib-gstreamer-tests / lib-ffmpeg-tests are defined above but disabled here.
+          inherit lib-transcode lib-gstreamer lib-ffmpeg;
+        };
 
         apps = {
           web-server = flake-utils.lib.mkApp {
@@ -886,6 +1165,9 @@
           svc-transcode = flake-utils.lib.mkApp {
             drv = svc-transcode;
           };
+          svc-transcode-ffmpeg = flake-utils.lib.mkApp {
+            drv = svc-transcode-ffmpeg;
+          };
           svc-assets = flake-utils.lib.mkApp {
             drv = svc-assets;
           };
@@ -895,7 +1177,16 @@
         };
 
         devShells.default = craneLib.devShell {
-          inputsFrom = [web-server web-frontend];
+          # `svc-transcode`, not `web-server` -- `web-server` dropped its
+          # `gstPackages` buildInputs entirely once its `lib-gstreamer`
+          # dependency edge went `default-features = false` and it
+          # started depending on `lib-transcode-client` (also
+          # `default-features = false`) instead of `svc-transcode` itself
+          # (see the `web-server` package's own comment), so
+          # `svc-transcode` is the one crate left whose own args still
+          # pull GStreamer's headers/.pc files in for `cargo build`/
+          # `check -p svc-transcode` inside this shell to link against.
+          inputsFrom = [ svc-transcode svc-transcode-ffmpeg web-frontend ];
 
           # `gstPackages` are a build input (via `gstreamerArgs`/`inputsFrom`
           # above) so `cargo build`/`check` links against them fine, but that
@@ -904,7 +1195,7 @@
           # rpath in, but a plain `cargo test`/`cargo run` inside this
           # devShell doesn't go through that, and fails at process start
           # with "error while loading shared libraries: libgstreamer-1.0.so.0".
-          LD_LIBRARY_PATH = lib.makeLibraryPath gstPackages;
+          LD_LIBRARY_PATH = lib.makeLibraryPath (gstPackages ++ ffmpegPackages);
 
           # GStreamer's element registry is populated by scanning plugin
           # .so's under each package's `lib/gstreamer-1.0/` at runtime, not
@@ -947,20 +1238,25 @@
           '';
 
           packages = with pkgs; [
-            cargo-hakari
             sqlx-cli
             dioxus-cli
             # wasm-bindgen-cli intentionally omitted — see the comment by
             # frontendArgs.nativeBuildInputs above.
             binaryen
             tailwindcss
-            # `protoc`, for lib-proto's build.rs — also in
+            # `protoc`, for each svc-*'s build.rs — also in
             # commonArgs.nativeBuildInputs for `nix build`, but
             # `craneLib.devShell`'s `inputsFrom` only pulls in
             # web-server/web-frontend's own args, neither of which is
             # `commonArgs` itself, so it's listed again here explicitly.
             protobuf
-          ];
+          ]
+          # The `ffmpeg` CLI on PATH: `ffmpegPackages` are only build
+          # inputs here (libs/headers), and lib-gstreamer's tests/poster.rs
+          # shells out to `ffmpeg` (testsrc + libx264 + aac) for its
+          # fixture -- the minimal GStreamer set has no videotestsrc/AAC
+          # encoder to do it instead.
+          ++ ffmpegPackages;
         };
       }
     );

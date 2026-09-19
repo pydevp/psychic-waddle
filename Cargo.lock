@@ -235,6 +235,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bindgen"
+version = "0.72.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
+dependencies = [
+ "bitflags 2.13.1",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.13.0",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash 2.1.3",
+ "shlex 1.3.0",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -336,7 +354,7 @@ dependencies = [
  "find-msvc-tools",
  "jobserver",
  "libc",
- "shlex",
+ "shlex 2.0.1",
 ]
 
 [[package]]
@@ -344,6 +362,15 @@ name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
+
+[[package]]
+name = "cexpr"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
+dependencies = [
+ "nom",
+]
 
 [[package]]
 name = "cfb"
@@ -446,6 +473,17 @@ checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
  "crypto-common 0.1.7",
  "inout",
+]
+
+[[package]]
+name = "clang-sys"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "157a8ba7b480713b56f4c09fd13fc3e0a22a5dfab8097ba61cbc5feef950788a"
+dependencies = [
+ "glob",
+ "libc",
+ "libloading",
 ]
 
 [[package]]
@@ -1482,6 +1520,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "ffmpeg-next"
+version = "9.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6380599799e175191eb7ffe82c97f36a2a90a36cbc54c738a903e5287d7f516a"
+dependencies = [
+ "bitflags 2.13.1",
+ "ffmpeg-sys-next",
+ "libc",
+]
+
+[[package]]
+name = "ffmpeg-sys-next"
+version = "9.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b939bf79dd5949412a4b81cfe21a07f48ea21b47fcbb5f57816c8c2de5ae30b"
+dependencies = [
+ "bindgen",
+ "cc",
+ "libc",
+ "num_cpus",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1756,6 +1819,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
+
+[[package]]
 name = "gloo-net"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1812,7 +1881,7 @@ dependencies = [
  "futures-util",
  "glib",
  "gstreamer-sys",
- "itertools",
+ "itertools 0.14.0",
  "libc",
  "muldiv",
  "num-integer",
@@ -1983,6 +2052,12 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "hermit-abi"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 
 [[package]]
 name = "hex"
@@ -2358,6 +2433,15 @@ checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
 
 [[package]]
 name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -2559,6 +2643,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "lib-assets-client"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "lib-storage",
+ "lib-tracing",
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
+]
+
+[[package]]
 name = "lib-cloudflare"
 version = "0.1.0"
 dependencies = [
@@ -2577,7 +2678,6 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
- "workspace-hackari",
 ]
 
 [[package]]
@@ -2585,14 +2685,15 @@ name = "lib-db"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "serde_with",
  "sqlx",
  "thiserror 2.0.20",
  "time",
  "tokio",
+ "tracing",
  "utoipa",
  "uuid",
- "workspace-hackari",
 ]
 
 [[package]]
@@ -2606,8 +2707,35 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tracing",
  "url",
- "workspace-hackari",
+]
+
+[[package]]
+name = "lib-download-client"
+version = "0.1.0"
+dependencies = [
+ "lib-download",
+ "lib-tracing",
+ "prost",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
+]
+
+[[package]]
+name = "lib-ffmpeg"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "ffmpeg-next",
+ "image",
+ "lib-transcode",
+ "rand 0.10.2",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2621,22 +2749,26 @@ dependencies = [
  "gstreamer",
  "gstreamer-app",
  "image",
+ "lib-transcode",
  "rand 0.10.2",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
- "workspace-hackari",
 ]
 
 [[package]]
-name = "lib-proto"
+name = "lib-jobs"
 version = "0.1.0"
 dependencies = [
- "prost",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "workspace-hackari",
+ "async-trait",
+ "lib-db",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -2648,22 +2780,52 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
- "workspace-hackari",
 ]
 
 [[package]]
 name = "lib-tracing"
 version = "0.1.0"
 dependencies = [
+ "http",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
+ "tonic",
+ "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "workspace-hackari",
+]
+
+[[package]]
+name = "lib-transcode"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "async-trait",
+ "bytes",
+ "cbc",
+ "image",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "lib-transcode-client"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "lib-tracing",
+ "lib-transcode",
+ "prost",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
 ]
 
 [[package]]
@@ -2886,6 +3048,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "mio"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2966,6 +3134,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3033,6 +3211,16 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
  "libm",
+]
+
+[[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
 ]
 
 [[package]]
@@ -3412,7 +3600,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
  "heck",
- "itertools",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph",
@@ -3433,7 +3621,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -4273,6 +4461,12 @@ dependencies = [
 
 [[package]]
 name = "shlex"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
@@ -4661,19 +4855,18 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 name = "svc-assets"
 version = "0.1.0"
 dependencies = [
- "async-stream",
- "async-trait",
  "dotenvy",
+ "lib-assets-client",
  "lib-cloudflare",
  "lib-db",
- "lib-proto",
  "lib-storage",
+ "lib-tracing",
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
- "workspace-hackari",
 ]
 
 [[package]]
@@ -4683,13 +4876,14 @@ dependencies = [
  "async-trait",
  "dotenvy",
  "lib-download",
- "lib-proto",
+ "lib-download-client",
+ "lib-tracing",
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
- "workspace-hackari",
 ]
 
 [[package]]
@@ -4699,15 +4893,18 @@ dependencies = [
  "async-trait",
  "bytes",
  "dotenvy",
+ "lib-ffmpeg",
  "lib-gstreamer",
- "lib-proto",
+ "lib-tracing",
+ "lib-transcode",
+ "lib-transcode-client",
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "uuid",
- "workspace-hackari",
 ]
 
 [[package]]
@@ -5586,7 +5783,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "workspace-hackari",
 ]
 
 [[package]]
@@ -5596,21 +5792,23 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
+ "bytes",
  "dotenvy",
  "futures",
- "lib-cloudflare",
+ "lib-assets-client",
  "lib-db",
  "lib-download",
- "lib-gstreamer",
+ "lib-download-client",
+ "lib-jobs",
  "lib-storage",
  "lib-tracing",
+ "lib-transcode",
+ "lib-transcode-client",
  "serde",
  "serde_json",
- "svc-assets",
- "svc-download",
- "svc-transcode",
  "tempfile",
  "thiserror 2.0.20",
+ "time",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -5622,7 +5820,6 @@ dependencies = [
  "utoipa-axum",
  "utoipa-swagger-ui",
  "uuid",
- "workspace-hackari",
 ]
 
 [[package]]
@@ -5987,74 +6184,6 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
-
-[[package]]
-name = "workspace-hackari"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum-core",
- "base64",
- "bitflags 2.13.1",
- "bytes",
- "cc",
- "crypto-common 0.1.7",
- "deranged",
- "digest 0.10.7",
- "dioxus-cli-config",
- "either",
- "form_urlencoded",
- "futures-channel",
- "futures-executor",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
- "getrandom 0.4.3",
- "hashbrown 0.15.5",
- "hyper",
- "hyper-util",
- "indexmap 2.14.1",
- "libc",
- "log",
- "manganis-core",
- "memchr",
- "mime_guess",
- "num-traits",
- "once_cell",
- "proc-macro2",
- "prost",
- "rand 0.9.5",
- "regex",
- "regex-automata",
- "regex-syntax",
- "reqwest 0.13.4",
- "rustls",
- "rustls-webpki",
- "serde",
- "serde_core",
- "serde_json",
- "sha2 0.10.9",
- "slab",
- "smallvec",
- "sqlx-core",
- "sqlx-postgres",
- "syn 2.0.119",
- "syn 3.0.4",
- "sync_wrapper",
- "thiserror 2.0.20",
- "time",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tonic",
- "tower",
- "tower-http",
- "tracing",
- "tracing-core",
- "typenum",
- "uuid",
-]
 
 [[package]]
 name = "writeable"

@@ -1,0 +1,29 @@
+[package]
+name = "lib-assets-client"
+edition = "2024"
+version.workspace = true
+
+# Thin gRPC client + generated proto types only — no `lib_cloudflare`/
+# `lib_db`, since picking/constructing the real `AssetStore` impl is
+# `svc-assets`'s own `main.rs`'s job, not this crate's. Never built for
+# wasm32, same reasoning as `svc-assets`'s own gate.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tonic = { workspace = true }
+tracing = { workspace = true }
+lib-tracing = { version = "0.1", path = "../lib-tracing", features = ["tonic"] }
+tonic-prost = { workspace = true }
+prost = { workspace = true }
+# `AssetsGrpcClient` implements `lib_storage::AssetStore`, which is
+# `#[async_trait]`.
+lib-storage = { version = "0.1", path = "../lib-storage" }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tokio-stream = { version = "0.1" }
+# Builds `Publish`'s client-streaming outbound request (see client.rs).
+async-stream = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+tonic-prost-build = { workspace = true }
+
+[lints]
+workspace = true

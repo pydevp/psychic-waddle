@@ -1,0 +1,31 @@
+[package]
+name = "lib-ffmpeg"
+edition = "2024"
+version.workspace = true
+
+# FFmpeg backend for `lib-transcode`'s `Transcoder` trait. Binds the real,
+# native libav* libraries via `ffmpeg-next` — never built for wasm32, and
+# only ever linked by the binary that selects it (`svc-transcode`'s
+# `ffmpeg` feature), so no other build pulls FFmpeg in.
+#
+# `ffmpeg-next` (over shelling out to an `ffmpeg` binary, or raw
+# `ffmpeg-sys-next`): in-process libav* with safe wrappers gives us real
+# progress from packet timestamps, an interrupt callback for cancellation
+# and read timeouts, and the HLS muxer's built-in AES-128 support; it's
+# also what this project used before moving to GStreamer.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lib-transcode = { version = "0.1", path = "../lib-transcode", features = ["poster"] }
+ffmpeg-next = "9"
+rand = "0.10.2"
+tokio = { workspace = true, features = ["rt", "sync"] }
+bytes = "1"
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+lib-transcode = { version = "0.1", path = "../lib-transcode", features = ["conformance"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+[lints]
+workspace = true

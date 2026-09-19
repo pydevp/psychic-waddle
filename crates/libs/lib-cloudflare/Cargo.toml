@@ -5,8 +5,7 @@ edition = "2024"
 
 # lib-cloudflare talks to the real Cloudflare API (reqwest's native TLS
 # backend) and Postgres (via lib-db/sqlx) — native-only, never built for
-# wasm32. Gated to keep tokio's "net"-driven mio out of hakari's wasm32
-# unification (see web-server/Cargo.toml's comment for the full story).
+# wasm32, hence the target gate.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tracing = { workspace = true }
 serde = { workspace = true }
@@ -28,7 +27,6 @@ serde_json = "1"
 # `sha256(base64(content) + extension)[..32]`, so this needs a real SHA-256,
 # not just the base64 crate already here.
 sha2 = "0.10"
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
 
 # `WorkerAssetsStore` implements lib-storage's `AssetStore` trait, the DI
 # seam `web-server` swaps behind `Arc<dyn AssetStore>` (see that crate's

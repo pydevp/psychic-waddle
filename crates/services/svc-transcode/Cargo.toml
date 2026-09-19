@@ -3,22 +3,31 @@ name = "svc-transcode"
 edition = "2024"
 version.workspace = true
 
-# Native-only tonic server wrapping lib-gstreamer — never built for wasm32.
-# See lib-proto/Cargo.toml's comment for why this is gated the same way
-# lib-gstreamer/web-server already are.
+# Native-only tonic server wrapping one `lib-transcode` backend — never
+# built for wasm32, hence the target gate (same reason web-server is gated).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-lib-proto = { version = "0.1", path = "../../libs/lib-proto" }
-lib-gstreamer = { version = "0.1", path = "../../libs/lib-gstreamer" }
+lib-transcode = { version = "0.1", path = "../../libs/lib-transcode" }
+# Backends are compile-time opt-in (see `[features]`): a build only links
+# the media stack it actually uses, so e.g. the ffmpeg image never pulls in
+# GStreamer and vice versa.
+lib-gstreamer = { version = "0.1", path = "../../libs/lib-gstreamer", optional = true }
+lib-ffmpeg = { version = "0.1", path = "../../libs/lib-ffmpeg", optional = true }
+# Generated proto types + `TranscodeGrpcClient`, re-exported from
+# `src/lib.rs` — see that file's doc comment.
+lib-transcode-client = { version = "0.1", path = "../../libs/lib-transcode-client" }
+lib-tracing = { version = "0.1", path = "../../libs/lib-tracing" }
+tower-http = { workspace = true, features = ["trace"] }
 tonic = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal", "net"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal", "net", "fs"] }
 # `sync` for adapting the progress mpsc channel into TranscodeEvent's
 # server-streamed response (service.rs) the same way web-server's SSE
 # hub does (see job_events.rs).
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-# TranscodeGrpcClient (client.rs) implements lib_gstreamer::Transcoder,
-# which is #[async_trait] — see lib-gstreamer/Cargo.toml's comment on why.
+# service.rs's own `TranscodeServiceImpl` impl is `#[tonic::async_trait]`
+# (no dep needed for that), but its `#[cfg(test)]` fakes implement
+# `lib_gstreamer::Transcoder`, which is `#[async_trait]`.
 async-trait = { workspace = true }
 bytes = { workspace = true }
 dotenvy = "0.15"
@@ -26,7 +35,11 @@ dotenvy = "0.15"
 # way web-server/src/worker.rs names its own, just keyed by a random id
 # instead of a job id since this service never sees web-server's job ids.
 uuid = { workspace = true }
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
+
+[features]
+default = ["gstreamer"]
+gstreamer = ["dep:lib-gstreamer"]
+ffmpeg = ["dep:lib-ffmpeg"]
 
 [lints]
 workspace = true
