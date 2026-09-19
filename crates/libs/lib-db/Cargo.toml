@@ -5,8 +5,7 @@ version.workspace = true
 
 # lib-db is the Postgres client (sqlx's "net"-driven tokio pulls mio
 # along, and uuid/time here only ever run natively) — never built for
-# wasm32. Gated to keep it out of hakari's wasm32 unification (see
-# web-server/Cargo.toml's comment).
+# wasm32, hence the target gate.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 serde = { workspace = true }
 # Renders `time::OffsetDateTime` fields as RFC 3339 strings instead of
@@ -17,13 +16,15 @@ serde_with = { workspace = true }
 uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde-well-known"] }
 thiserror = "2"
+# Job/task `payload`/`result` columns (JSONB) -- see repo/job_queue.rs.
+serde_json = "1"
+tracing = { workspace = true }
 
 # Db models double as the JSON API's DTOs (see web-server/src/routes) so
 # they carry `ToSchema` straight from here rather than being duplicated
 # behind a mapping layer.
 utoipa = { version = "5", features = ["uuid", "time"] }
 
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
 
 # Postgres (crates/services/web-server connects to the `file_browser` db
 # on reze-pi — see infra's modules/nixos/services/postgresql.nix). Used
@@ -38,6 +39,7 @@ sqlx = { version = "0.8", default-features = false, features = [
     "migrate",
     "uuid",
     "time",
+    "json",
 ] }
 
 [features]

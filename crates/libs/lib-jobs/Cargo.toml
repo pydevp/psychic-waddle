@@ -1,0 +1,28 @@
+[package]
+name = "lib-jobs"
+edition = "2024"
+version.workspace = true
+
+# The generic job/task engine (registry + scheduler + progress/cancel
+# plumbing) that every `JobType` -- transcode, download, upload,
+# image/poster generation -- plugs into. Talks to Postgres only through
+# `lib-db`'s job_queue repo methods; never native, so same target gate
+# as lib-db.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lib-db = { path = "../lib-db" }
+
+serde = { workspace = true }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+tokio-util = "0.7"
+tracing = { workspace = true }
+thiserror = "2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+lib-db = { path = "../lib-db", features = ["test-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true

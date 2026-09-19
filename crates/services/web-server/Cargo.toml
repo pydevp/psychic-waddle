@@ -6,11 +6,7 @@ edition = "2024"
 # web-server is a native-only axum/tokio binary — never built for
 # wasm32. Everything here (tokio's "signal"/"net" reactor, axum, sqlx via
 # lib-db, …) drags mio along, which doesn't support
-# wasm32-unknown-unknown. It's all under a non-wasm32 target gate purely
-# so hakari's workspace-wide, per-platform feature unification (see
-# .config/hakari.toml's `platforms`) doesn't force it into the
-# web-frontend wasm32 build via workspace-hackari — this has no effect on
-# the actual (native) build.
+# wasm32-unknown-unknown, hence the non-wasm32 target gate.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 axum = { workspace = true }
 tower-http = { workspace = true, features = ["trace", "cors"] }
@@ -21,7 +17,6 @@ tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = "1"
 thiserror = "2"
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
 
 # Loads `.env` (from the working directory the binary is run from) into
 # the process's environment before anything reads a `CLOUDFLARE_*`/
@@ -31,7 +26,18 @@ workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
 dotenvy = "0.15"
 
 lib-db = { version = "0.1", path = "../../libs/lib-db" }
+# The generic job/task engine (JOB_FRAMEWORK_DESIGN.md) -- registry,
+# scheduler, progress/cancellation plumbing every job type (job_types/)
+# plugs into. AppState holds an `Arc<lib_jobs::Engine>` instead of the
+# old ad hoc worker.rs/job_events.rs pairing.
+lib-jobs = { version = "0.1", path = "../../libs/lib-jobs" }
 uuid = { version = "1", features = ["serde"] }
+# `job_types::upload` wraps `video_images` bytes (`Vec<u8>`) into
+# `lib_storage::AssetFile`'s `bytes::Bytes` field.
+bytes = "1"
+# `GET /api/jobs`'s created_after/created_before query params -- same
+# RFC 3339 wire shape lib-db's own timestamp fields already use.
+time = { version = "0.3", features = ["serde-well-known"] }
 
 # OTLP export for `tracing` — see main.rs's `OTEL_EXPORTER_OTLP_ENDPOINT`
 # gating and lib-tracing's own doc comment for the full story.
@@ -39,9 +45,18 @@ lib-tracing = { version = "0.1", path = "../../libs/lib-tracing" }
 
 # The transcode + asset-publish DI seam `AppState` holds as `Arc<dyn Trait>`
 # (see state.rs) — this crate is the composition root that picks concrete
-# implementations (main.rs) and drives them (worker.rs).
-lib-gstreamer = { version = "0.1", path = "../../libs/lib-gstreamer" }
-lib-cloudflare = { version = "0.1", path = "../../libs/lib-cloudflare" }
+# implementations (main.rs) and drives them (worker.rs). Every seam is now
+# *required* to be a gRPC client (`SVC_TRANSCODE_ADDR`/`SVC_ASSETS_ADDR`/
+# `SVC_DOWNLOAD_ADDR` — see main.rs's `build_transcoder`/`build_asset_store`/
+# `build_download_providers`, which fail startup outright if unset or
+# unreachable rather than falling back in-process) precisely so this
+# binary/image never needs to be able to *run* the heavy backends itself
+# — `lib-transcode` gets just the
+# `Transcoder` trait/request/response types, no native GStreamer libs at
+# all (see that crate's doc comment); `lib-cloudflare` isn't a dependency
+# here anymore at all, since `svc-assets` now owns that choice
+# exclusively.
+lib-transcode = { version = "0.1", path = "../../libs/lib-transcode" }
 lib-storage = { version = "0.1", path = "../../libs/lib-storage" }
 # The download-source DI seam `AppState` holds a registry of as
 # `Arc<dyn DownloadProvider>` per provider — same composition-root story
@@ -49,17 +64,19 @@ lib-storage = { version = "0.1", path = "../../libs/lib-storage" }
 lib-download = { version = "0.1", path = "../../libs/lib-download" }
 
 # gRPC clients for the DI seam above: main.rs's `build_transcoder`/
-# `build_asset_store`/`build_download_providers` each pick one of these
-# over the in-process impl when the matching `SVC_*_ADDR` env var is set
-# — see crates/services/GRPC_MIGRATION.md. Depending on the whole
-# service crate (not just splitting out a `-client` crate) is a
-# deliberate simplification: the extra server-side code these crates
-# also carry (service.rs, main.rs) is unused dead weight in web-server's
-# own binary, but small, and avoids a fourth crate-per-service just to
-# hold what client.rs already is.
-svc-transcode = { version = "0.1", path = "../svc-transcode" }
-svc-assets = { version = "0.1", path = "../svc-assets" }
-svc-download = { version = "0.1", path = "../svc-download" }
+# `build_asset_store`/`build_download_providers` each connect one of
+# these — see crates/services/GRPC_MIGRATION.md. Each is the dedicated
+# `lib-*-client` crate under `crates/libs/` (generated proto types + the
+# `Grpc*Client` wrapper only), not the full `svc-*` service crate —
+# `svc-transcode`/`svc-assets`/`svc-download`'s own server-side code
+# (`service.rs`/`main.rs`, and for `svc-assets`, its `lib-cloudflare`/
+# `lib-db` deps used only to pick the real `AssetStore` impl) never
+# enters web-server's dependency graph at all through this edge.
+# `lib-transcode-client` in particular depends only on `lib-transcode`
+# (never a backend), so nothing media-linking enters this build.
+lib-transcode-client = { version = "0.1", path = "../../libs/lib-transcode-client" }
+lib-assets-client = { version = "0.1", path = "../../libs/lib-assets-client" }
+lib-download-client = { version = "0.1", path = "../../libs/lib-download-client" }
 # GrpcDownloadProvider (main.rs) implements lib_download::DownloadProvider,
 # which is #[async_trait] — was dev-only below (remote_sync's tests faking
 # the same trait) before this DI seam needed a real impl of it too.

@@ -34,8 +34,21 @@ wasm-bindgen-futures = "=0.4.76"
 # "Location" isn't in dioxus-web's own declared web-sys features but its
 # history.rs uses `Window::location()` — added directly so feature
 # unification turns it on. "Storage"/"Window" are for `view_mode.rs`'s
-# `localStorage` read/write (view-template persistence).
-web-sys = { version = "=0.3.103", features = ["Location", "Storage", "Window"] }
+# `localStorage` read/write (view-template persistence). "History"/
+# "PopStateEvent"/"Event"/"EventTarget" are for `local_browser.rs`'s
+# manual `pushState`/`popstate` handling (see its doc comment — the
+# local browse path deliberately isn't a real router route, so it wires
+# up its own back/forward support directly against the browser's History
+# API instead).
+web-sys = { version = "=0.3.103", features = [
+    "Location",
+    "Storage",
+    "Window",
+    "History",
+    "PopStateEvent",
+    "Event",
+    "EventTarget",
+] }
 
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "query"] }
 serde = { version = "1", features = ["derive"] }
@@ -43,7 +56,6 @@ serde = { version = "1", features = ["derive"] }
 # — reqwest's "json" feature already pulls this in transitively, but a
 # direct dependency is needed to `use` it ourselves.
 serde_json = "1"
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Not used directly — pulled in transitively as getrandom 0.2.17 via

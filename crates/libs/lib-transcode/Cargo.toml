@@ -1,0 +1,36 @@
+[package]
+name = "lib-transcode"
+edition = "2024"
+version.workspace = true
+
+# Backend-agnostic transcoding interface: the `Transcoder` trait plus the
+# request/response/error types every backend (`lib-gstreamer`,
+# `lib-ffmpeg`) implements. Deliberately has no native-library dependency
+# of any kind — consumers that only need the trait (web-server,
+# lib-transcode-client) never pull a media stack into their build.
+[dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
+thiserror = "2"
+tokio = { workspace = true, features = ["rt", "sync"] }
+# `CancellationToken` on the request types (see `TranscodeRequest::cancel`).
+tokio-util = { version = "0.7", default-features = false }
+# Only for `TranscodeError::Image` (`image::ImageError`) — no codecs.
+image = { version = "0.25", default-features = false }
+
+# Shared poster/contact-sheet scale+tile+JPEG encoding (see `src/poster.rs`)
+# for backends that decode frames themselves; off by default so trait-only
+# consumers (web-server) never compile the JPEG encoder.
+aes = { version = "0.8", optional = true }
+cbc = { version = "0.1", features = ["std"], optional = true }
+
+[features]
+poster = ["image/jpeg"]
+# Backend-agnostic conformance suite (see `src/conformance.rs`): every
+# backend's `tests/` runs it against its own `Transcoder`. Decrypts HLS
+# segments and shells out to `ffprobe` (must be on PATH) to compare
+# duration/codec/resolution/stream count.
+conformance = ["poster", "dep:aes", "dep:cbc"]
+
+[lints]
+workspace = true

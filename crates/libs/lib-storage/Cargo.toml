@@ -4,8 +4,7 @@ edition = "2024"
 version.workspace = true
 
 # lib-storage's `LocalFsStore` shells out to real filesystem/tokio "fs"
-# I/O — native-only, never built for wasm32. Gated to keep it out of
-# hakari's wasm32 unification (see web-server/Cargo.toml's comment).
+# I/O — native-only, never built for wasm32, hence the target gate.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # The DI seam: `AssetStore` is the trait `web-server` holds as
 # `Arc<dyn AssetStore>`; `LocalFsStore` here is the dependency-free default
@@ -18,7 +17,6 @@ thiserror = "2"
 tokio = { workspace = true, features = ["fs", "sync"] }
 tracing = { workspace = true }
 
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

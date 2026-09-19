@@ -4,23 +4,22 @@ edition = "2024"
 version.workspace = true
 
 # Native-only tonic server wrapping lib-storage/lib-cloudflare — never
-# built for wasm32. See lib-proto/Cargo.toml's comment.
+# built for wasm32, hence the target gate.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-lib-proto = { version = "0.1", path = "../../libs/lib-proto" }
 lib-storage = { version = "0.1", path = "../../libs/lib-storage" }
 lib-cloudflare = { version = "0.1", path = "../../libs/lib-cloudflare" }
 lib-db = { version = "0.1", path = "../../libs/lib-db" }
+# Generated proto types + `AssetsGrpcClient`, re-exported from
+# `src/lib.rs` — see that file's doc comment.
+lib-assets-client = { version = "0.1", path = "../../libs/lib-assets-client" }
+lib-tracing = { version = "0.1", path = "../../libs/lib-tracing" }
+tower-http = { workspace = true, features = ["trace"] }
 tonic = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal", "net"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-async-stream = "0.3"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-# AssetsGrpcClient (client.rs) implements lib_storage::AssetStore, which
-# is #[async_trait].
-async-trait = { workspace = true }
 dotenvy = "0.15"
-workspace-hackari = { version = "0.1", path = "../../workspace-hackari" }
 
 [lints]
 workspace = true
