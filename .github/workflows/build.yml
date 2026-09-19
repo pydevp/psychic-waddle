@@ -24,7 +24,7 @@ name: build-deps
 # aarch64) compile from scratch.
 #
 # One job per dependency-graph target (matching flake.nix's three
-# `*CargoArtifacts` groups, one per set of microservices) rather than
+# `*CargoArtifacts` groups, one per set of microservices, plus FFmpeg) rather than
 # one job building all three attrs together, so they run in parallel
 # across separate runners instead of sharing one runner's cores
 # sequentially -- each group already has its own independent
@@ -53,6 +53,9 @@ jobs:
           # svc-assets + svc-download (no GStreamer)
           - name: svc-light
             attr: cargo-deps-svc-light-aarch64
+          # svc-transcode built against FFmpeg (static musl libav*/x264)
+          - name: ffmpeg
+            attr: cargo-deps-ffmpeg-aarch64
           # web-frontend (wasm32 -- arch-independent, no -aarch64 variant;
           # building it on the same x86_64 host as the others is what
           # makes it match a local x86_64-linux build too)
