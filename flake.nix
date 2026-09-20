@@ -818,8 +818,13 @@
           };
 
         # `armPkgsCross.ffmpeg` is the static aarch64 libav* (linked via the cross pkg-config wrapper
-        # from `armCommonArgs`); `bindgenHook` from the cross package set
-        # points bindgen's libclang at the aarch64 sysroot headers.
+        # from `armCommonArgs`). The bindgen hook is the *host* one
+        # (`pkgs.rustPlatform.bindgenHook`): the `pkgsStatic` one drags in a
+        # `clang-static-x86_64-musl` that isn't in any binary cache and
+        # costs a full clang build. It only needs libclang to parse headers,
+        # so the aarch64 sysroot is supplied through the target-specific
+        # `BINDGEN_EXTRA_CLANG_ARGS_<triple>` (bindgen prefers it over the
+        # hook's generic, host-glibc `BINDGEN_EXTRA_CLANG_ARGS`).
         armFfmpegPackages = [ (mkMinimalFfmpeg armPkgsCross) ];
         armFfmpegArgs =
           armCommonArgs
@@ -827,8 +832,11 @@
             pname = "next_file_browser-ffmpeg";
             # Link libav*/x264 statically (musl, no dynamic loader at runtime).
             PKG_CONFIG_ALL_STATIC = "1";
+            "BINDGEN_EXTRA_CLANG_ARGS_${builtins.replaceStrings [ "-" ] [ "_" ] armTargetTriple}" =
+              "--target=${armTargetTriple} --sysroot=${armPkgsCross.stdenv.cc.libc.dev} "
+              + "-isystem ${pkgs.libclang.lib}/lib/clang/${lib.versions.major (lib.getVersion pkgs.libclang)}/include";
             buildInputs = (armCommonArgs.buildInputs or [ ]) ++ armFfmpegPackages;
-            nativeBuildInputs = armCommonArgs.nativeBuildInputs ++ [ armPkgsCross.rustPlatform.bindgenHook ];
+            nativeBuildInputs = armCommonArgs.nativeBuildInputs ++ [ pkgs.rustPlatform.bindgenHook ];
             cargoExtraArgs = "--locked -p lib-ffmpeg -p svc-transcode --no-default-features --features svc-transcode/ffmpeg";
           };
 
