@@ -832,6 +832,9 @@
             pname = "next_file_browser-ffmpeg";
             # Link libav*/x264 statically (musl, no dynamic loader at runtime).
             PKG_CONFIG_ALL_STATIC = "1";
+            # gnutls -> libidn2 -> libunistring: libidn2's `.pc` emits
+            # `-lunistring` without a `-L`, so the static link can't find it.
+            "CARGO_TARGET_${armTargetEnv}_RUSTFLAGS" = "-L native=${armPkgsCross.libunistring}/lib";
             "BINDGEN_EXTRA_CLANG_ARGS_${builtins.replaceStrings [ "-" ] [ "_" ] armTargetTriple}" =
               "--target=${armTargetTriple} --sysroot=${armPkgsCross.stdenv.cc.libc.dev} "
               + "-isystem ${pkgs.libclang.lib}/lib/clang/${lib.versions.major (lib.getVersion pkgs.libclang)}/include";

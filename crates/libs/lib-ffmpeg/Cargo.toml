@@ -15,7 +15,9 @@ version.workspace = true
 # also what this project used before moving to GStreamer.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 lib-transcode = { version = "0.1", path = "../lib-transcode", features = ["poster"] }
-ffmpeg-next = "9"
+# Default features minus `device` (libavdevice: capture devices, unused
+# here and not built by the flake's minimal ffmpeg, `buildAvdevice = false`).
+ffmpeg-next = { version = "9", default-features = false, features = ["codec", "filter", "format", "software-resampling", "software-scaling"] }
 rand = "0.10.2"
 tokio = { workspace = true, features = ["rt", "sync"] }
 bytes = "1"
